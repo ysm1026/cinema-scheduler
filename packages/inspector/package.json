@@ -1,0 +1,27 @@
+{
+  "name": "@cinema-scheduler/inspector",
+  "version": "1.0.0",
+  "description": "Web UI for debugging and testing MCP tools",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "test": "echo 'No tests yet'",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cinema-scheduler/shared": "workspace:*",
+    "@hono/node-server": "^1.13.8",
+    "@modelcontextprotocol/sdk": "^1.4.1",
+    "hono": "^4.7.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}

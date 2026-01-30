@@ -1,0 +1,10 @@
+{
+  "id": "cinema-mcp",
+  "name": "Cinema Scheduler MCP",
+  "description": "Claude Desktop用MCPサーバーによる映画マラソンスケジューラー",
+  "version": "2.0.0",
+  "language": "ja",
+  "status": "draft",
+  "createdAt": "2026-01-29",
+  "updatedAt": "2026-01-29"
+}

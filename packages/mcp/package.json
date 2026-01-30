@@ -1,0 +1,31 @@
+{
+  "name": "@cinema-scheduler/mcp",
+  "version": "1.0.0",
+  "description": "MCP server for cinema schedule queries and optimization",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "cinema-mcp": "./dist/server.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cinema-scheduler/shared": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.4.1",
+    "sql.js": "^1.12.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "@types/sql.js": "^1.4.9",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}
