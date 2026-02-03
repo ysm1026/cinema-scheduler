@@ -14,6 +14,10 @@
     "dev:mcp": "pnpm --filter @cinema-scheduler/mcp dev",
     "dev:inspector": "pnpm --filter @cinema-scheduler/inspector dev",
     "scrape": "pnpm --filter @cinema-scheduler/scraper start",
+    "cron": "pnpm --filter @cinema-scheduler/cron start",
+    "cron:dev": "pnpm --filter @cinema-scheduler/cron dev",
+    "cron:scrape": "pnpm --filter @cinema-scheduler/cron scrape",
+    "cron:export": "pnpm --filter @cinema-scheduler/cron export",
     "clean": "rm -rf packages/*/dist packages/*/node_modules node_modules"
   },
   "keywords": [

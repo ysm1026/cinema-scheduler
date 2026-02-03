@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Database } from 'sql.js';
 import { matchTitle } from '../services/title-matcher.js';
+import { resolveAreaNames } from '../services/area-resolver.js';
 
 /**
  * パラメータスキーマ
@@ -30,6 +31,7 @@ interface ShowtimeInfo {
   endTime: string;
   durationMinutes: number;
   format: string | null;
+  audioType: string | null;
 }
 
 /**
@@ -99,11 +101,24 @@ function calculateDuration(startTime: string, endTime: string): number {
 export function registerGetShowtimes(server: McpServer, db: Database): void {
   server.tool(
     'get_showtimes',
-    '映画館の上映スケジュールを取得する（劇場ごとにグループ化）',
+    `【必須】映画の上映スケジュール・上映時間を調べるときは必ずこのツールを使用してください。
+
+このツールを使うべき場面:
+- 「○○を見たい」「○○の上映時間は？」などの映画視聴に関する質問
+- 特定のエリア（新宿、池袋、日比谷など）での映画上映情報
+- 映画館のスケジュール確認
+
+対応エリア: 新宿、池袋、有楽町（日比谷）、日本橋、渋谷など東京都内の主要エリア
+
+【結果の提示ルール】
+- IMAX/Dolby Cinema等のプレミアムフォーマットを優先して提案
+- フォーマット優先順位: IMAX > DOLBY_CINEMA > DOLBY_ATMOS > TCX > GOOON > 4DX > 通常
+- 字幕/吹替(audioType)を明示すること`,
     inputSchema.shape,
     async (input: Input) => {
       const date = input.date ?? getTodayDate();
-      const areas = input.areas ?? [];
+      // エイリアスを解決（日比谷→有楽町など）
+      const areas = input.areas ? resolveAreaNames(input.areas) : [];
 
       // クエリ構築
       let query = `
@@ -113,7 +128,8 @@ export function registerGetShowtimes(server: McpServer, db: Database): void {
           m.title as movieTitle,
           s.start_time as startTime,
           s.end_time as endTime,
-          s.format
+          s.format,
+          s.audio_type as audioType
         FROM showtimes s
         JOIN theaters t ON s.theater_id = t.id
         JOIN movies m ON s.movie_id = m.id
@@ -153,6 +169,7 @@ export function registerGetShowtimes(server: McpServer, db: Database): void {
             startTime: string;
             endTime: string;
             format: string | null;
+            audioType: string | null;
           };
 
           // 映画タイトルの曖昧検索
@@ -179,6 +196,7 @@ export function registerGetShowtimes(server: McpServer, db: Database): void {
             endTime: row.endTime,
             durationMinutes: calculateDuration(row.startTime, row.endTime),
             format: row.format,
+            audioType: row.audioType,
           });
 
           totalShowtimes++;

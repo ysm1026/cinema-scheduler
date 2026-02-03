@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Database } from 'sql.js';
+import { resolveAreaNames } from '../services/area-resolver.js';
 
 /**
  * パラメータスキーマ
@@ -49,11 +50,16 @@ function getTodayDate(): string {
 export function registerListMovies(server: McpServer, db: Database): void {
   server.tool(
     'list_movies',
-    '現在上映中の映画リストを取得する',
+    `【必須】現在上映中の映画一覧を調べるときはこのツールを使用してください。
+
+このツールを使うべき場面:
+- 「今やってる映画は？」「上映中の映画を教えて」などの質問
+- 特定エリアで見られる映画のリストを確認したいとき`,
     inputSchema.shape,
     async (input: Input) => {
       const date = input.date ?? getTodayDate();
-      const areas = input.areas ?? [];
+      // エイリアスを解決（日比谷→有楽町など）
+      const areas = input.areas ? resolveAreaNames(input.areas) : [];
 
       let query = `
         SELECT

@@ -17,27 +17,14 @@ pnpm build
 {
   "mcpServers": {
     "cinema-scheduler": {
-      "command": "node",
-      "args": ["/path/to/cinema-scheduler/packages/mcp/dist/server.js"],
-      "env": {}
+      "command": "/opt/homebrew/bin/node",
+      "args": ["/path/to/cinema-scheduler/packages/mcp/dist/server.js"]
     }
   }
 }
 ```
 
-または、npm globalでインストールした場合:
-
-```json
-{
-  "mcpServers": {
-    "cinema-scheduler": {
-      "command": "cinema-mcp",
-      "args": [],
-      "env": {}
-    }
-  }
-}
-```
+**重要**: `command`にはnodeの絶対パスを指定してください（`which node`で確認）。
 
 ## 利用可能なツール
 
@@ -46,15 +33,15 @@ pnpm build
 指定条件に合う上映スケジュールを取得します。
 
 **パラメータ:**
-- `date` (必須): 日付（YYYY-MM-DD形式）
-- `area` (任意): エリア名（例: 新宿、渋谷）
-- `theater` (任意): 映画館名
-- `movieTitle` (任意): 映画タイトル（部分一致）
-- `format` (任意): 上映形式（IMAX, DOLBY_CINEMA等）
+- `date` (任意): 日付（YYYY-MM-DD形式、省略時は今日）
+- `areas` (任意): エリア名リスト（例: ["新宿", "池袋"]）
+- `theater` (任意): 映画館名（部分一致）
+- `movieTitle` (任意): 映画タイトル（曖昧検索）
 
 **例:**
 ```
-新宿エリアの2026年1月30日の上映スケジュールを教えて
+新宿エリアの今日の上映スケジュールを教えて
+日比谷でランニングマンを見たい
 ```
 
 ### list_theaters
@@ -62,14 +49,14 @@ pnpm build
 利用可能な映画館の一覧を取得します。
 
 **パラメータ:**
-- `area` (任意): エリア名で絞り込み
+- `areas` (任意): エリア名リストで絞り込み
 
 ### list_movies
 
 上映中の映画一覧を取得します。
 
 **パラメータ:**
-- `area` (任意): エリア名で絞り込み
+- `areas` (任意): エリア名リストで絞り込み
 - `date` (任意): 日付で絞り込み
 
 ### get_data_status
@@ -84,8 +71,8 @@ pnpm build
 
 **パラメータ:**
 - `movieTitles` (必須): 観たい映画のタイトルリスト（優先順）
-- `date` (必須): 日付（YYYY-MM-DD形式）
-- `area` (必須): エリア名
+- `areas` (必須): エリア名リスト
+- `date` (任意): 日付（YYYY-MM-DD形式、省略時は今日）
 - `timeRange` (任意): 希望時間帯 `{ start: "10:00", end: "22:00" }`
 - `bufferMinutes` (任意): 映画間の休憩時間（分、デフォルト30）
 - `preferPremium` (任意): IMAX/Dolby等を優先するか
@@ -93,9 +80,37 @@ pnpm build
 **例:**
 ```
 明日、新宿で「ズートピア2」と「シャドウズ・エッジ」を観たいんだけど、
-10時から20時の間で最適なスケジュールを組んでくれない？
-休憩は15分くらいでお願い。
+10時から20時の間で最適なスケジュールを組んで
 ```
+
+## トラブルシューティング
+
+### AIがツールを使わない場合
+
+Claude Desktopで「映画を検索して」と言ってもツールが呼び出されない場合：
+
+1. **明示的にツール使用を指示する**
+   ```
+   get_showtimes ツールを使って、新宿の映画スケジュールを取得してください
+   ```
+
+2. **ツールのdescriptionが重要**
+   - AIは `description` を見て「いつ使うべきか」を判断します
+   - 「【必須】〜のときはこのツールを使用してください」のような明確な指示が効果的
+
+### ログの確認方法
+
+```bash
+# MCPサーバーのログ
+tail -f ~/Library/Logs/Claude/mcp-server-cinema-scheduler.log
+
+# Claude Desktop全体のログ
+tail -f ~/Library/Logs/Claude/main.log
+```
+
+### 接続状態の確認
+
+Claude Desktopの **Settings → Developer → MCP Servers** で `cinema-scheduler` のステータスを確認。
 
 ## 開発
 
@@ -116,10 +131,16 @@ pnpm typecheck
 ## データについて
 
 このMCPサーバーは、`@cinema-scheduler/scraper`で収集したデータを使用します。
+データは `~/.cinema-scheduler/data.db` に保存されます。
 
 最新のデータを取得するには:
 
 ```bash
-cd ../scraper
-pnpm start -- --area 新宿,渋谷 --days 3
+pnpm scrape
+```
+
+または自動更新を設定するには:
+
+```bash
+pnpm cron:dev
 ```

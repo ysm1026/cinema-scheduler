@@ -13,6 +13,7 @@ describe('optimizeSchedule', () => {
       startTime: '10:00',
       endTime: '11:48',
       format: null,
+      audioType: null,
     },
     {
       movieTitle: 'ズートピア2',
@@ -20,6 +21,7 @@ describe('optimizeSchedule', () => {
       startTime: '14:00',
       endTime: '15:48',
       format: 'IMAX',
+      audioType: 'subtitled',
     },
     {
       movieTitle: 'シャドウズ・エッジ',
@@ -27,6 +29,7 @@ describe('optimizeSchedule', () => {
       startTime: '12:30',
       endTime: '14:51',
       format: null,
+      audioType: null,
     },
     {
       movieTitle: 'シャドウズ・エッジ',
@@ -34,6 +37,7 @@ describe('optimizeSchedule', () => {
       startTime: '16:00',
       endTime: '18:21',
       format: null,
+      audioType: 'dubbed',
     },
     {
       movieTitle: 'ワーキングマン',
@@ -41,6 +45,7 @@ describe('optimizeSchedule', () => {
       startTime: '10:55',
       endTime: '13:00',
       format: null,
+      audioType: null,
     },
   ];
 
@@ -53,13 +58,14 @@ describe('optimizeSchedule', () => {
     };
 
     const result = optimizeSchedule(options);
+    const best = result.candidates[0];
 
-    expect(result.schedule).toHaveLength(2);
-    expect(result.schedule[0]?.movieTitle).toBe('ズートピア2');
-    expect(result.schedule[0]?.startTime).toBe('10:00');
-    expect(result.schedule[1]?.movieTitle).toBe('シャドウズ・エッジ');
-    expect(result.schedule[1]?.startTime).toBe('12:30');
-    expect(result.excluded).toHaveLength(0);
+    expect(best?.schedule).toHaveLength(2);
+    expect(best?.schedule[0]?.movieTitle).toBe('ズートピア2');
+    expect(best?.schedule[0]?.startTime).toBe('10:00');
+    expect(best?.schedule[1]?.movieTitle).toBe('シャドウズ・エッジ');
+    expect(best?.schedule[1]?.startTime).toBe('12:30');
+    expect(best?.excluded).toHaveLength(0);
   });
 
   it('should prefer premium formats when preferPremium is true', () => {
@@ -71,11 +77,13 @@ describe('optimizeSchedule', () => {
     };
 
     const result = optimizeSchedule(options);
+    const best = result.candidates[0];
 
-    expect(result.schedule).toHaveLength(1);
-    // 最も早い上映を選ぶが、IMAX優先でソートされている
-    // ただし10:00と14:00では10:00が先なので通常版が選ばれる
-    expect(result.schedule[0]?.startTime).toBe('10:00');
+    expect(best?.schedule).toHaveLength(1);
+    // preferPremium=trueの場合、IMAXが通常版より優先される
+    // 時間より高品質フォーマットを優先
+    expect(best?.schedule[0]?.startTime).toBe('14:00');
+    expect(best?.schedule[0]?.format).toBe('IMAX');
   });
 
   it('should respect time range', () => {
@@ -88,10 +96,11 @@ describe('optimizeSchedule', () => {
     };
 
     const result = optimizeSchedule(options);
+    const best = result.candidates[0];
 
-    expect(result.schedule).toHaveLength(2);
-    expect(result.schedule[0]?.startTime).toBe('14:00');
-    expect(result.schedule[1]?.startTime).toBe('16:00');
+    expect(best?.schedule).toHaveLength(2);
+    expect(best?.schedule[0]?.startTime).toBe('14:00');
+    expect(best?.schedule[1]?.startTime).toBe('16:00');
   });
 
   it('should exclude movies not found', () => {
@@ -103,11 +112,12 @@ describe('optimizeSchedule', () => {
     };
 
     const result = optimizeSchedule(options);
+    const best = result.candidates[0];
 
-    expect(result.schedule).toHaveLength(1);
-    expect(result.excluded).toHaveLength(1);
-    expect(result.excluded[0]?.title).toBe('存在しない映画');
-    expect(result.excluded[0]?.reason).toBe('not_found');
+    expect(best?.schedule).toHaveLength(1);
+    expect(best?.excluded).toHaveLength(1);
+    expect(best?.excluded[0]?.title).toBe('存在しない映画');
+    expect(best?.excluded[0]?.reason).toBe('not_found');
   });
 
   it('should exclude movies with time conflict', () => {
@@ -120,13 +130,14 @@ describe('optimizeSchedule', () => {
     };
 
     const result = optimizeSchedule(options);
+    const best = result.candidates[0];
 
     // ズートピア2 10:00-11:48の後、30分バッファで12:18以降の上映が必要
     // ワーキングマン 10:55-13:00 は開始時間が早いので除外される
-    expect(result.schedule).toHaveLength(1);
-    expect(result.excluded).toHaveLength(1);
-    expect(result.excluded[0]?.title).toBe('ワーキングマン');
-    expect(result.excluded[0]?.reason).toBe('time_conflict');
+    expect(best?.schedule).toHaveLength(1);
+    expect(best?.excluded).toHaveLength(1);
+    expect(best?.excluded[0]?.title).toBe('ワーキングマン');
+    expect(best?.excluded[0]?.reason).toBe('time_conflict');
   });
 
   it('should calculate correct statistics', () => {
@@ -138,13 +149,14 @@ describe('optimizeSchedule', () => {
     };
 
     const result = optimizeSchedule(options);
+    const best = result.candidates[0];
 
-    expect(result.stats.totalMovies).toBe(2);
+    expect(best?.stats.totalMovies).toBe(2);
     // ズートピア2: 108分, シャドウズ・エッジ: 141分
-    expect(result.stats.totalWatchTimeMinutes).toBe(108 + 141);
+    expect(best?.stats.totalWatchTimeMinutes).toBe(108 + 141);
     // 11:48 -> 12:30 = 42分の休憩
-    expect(result.stats.totalBreakTimeMinutes).toBe(42);
-    expect(result.stats.premiumCount).toBe(0);
+    expect(best?.stats.totalBreakTimeMinutes).toBe(42);
+    expect(best?.stats.premiumCount).toBe(0);
   });
 
   it('should handle empty movie list', () => {
@@ -156,9 +168,10 @@ describe('optimizeSchedule', () => {
     };
 
     const result = optimizeSchedule(options);
+    const best = result.candidates[0];
 
-    expect(result.schedule).toHaveLength(0);
-    expect(result.excluded).toHaveLength(0);
+    expect(best?.schedule).toHaveLength(0);
+    expect(best?.excluded).toHaveLength(0);
   });
 
   it('should handle empty showtimes', () => {
@@ -170,9 +183,10 @@ describe('optimizeSchedule', () => {
     };
 
     const result = optimizeSchedule(options);
+    const best = result.candidates[0];
 
-    expect(result.schedule).toHaveLength(0);
-    expect(result.excluded).toHaveLength(1);
-    expect(result.excluded[0]?.reason).toBe('not_found');
+    expect(best?.schedule).toHaveLength(0);
+    expect(best?.excluded).toHaveLength(1);
+    expect(best?.excluded[0]?.reason).toBe('not_found');
   });
 });

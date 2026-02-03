@@ -40,7 +40,6 @@ async function main(): Promise<void> {
       process.exit(0);
     });
   } catch (error) {
-    console.error('Failed to start MCP server:', error);
     cleanup();
     process.exit(1);
   }

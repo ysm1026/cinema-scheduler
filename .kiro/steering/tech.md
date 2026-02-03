@@ -35,6 +35,7 @@
 | `@cinema-scheduler/mcp` | MCPサーバー（Claude Desktop連携） |
 | `@cinema-scheduler/scraper` | eiga.comスクレイパー |
 | `@cinema-scheduler/shared` | DB接続・型定義・マイグレーション |
+| `@cinema-scheduler/cron` | 定期実行（スクレイピング + Googleスプレッドシート連携） |
 | `@cinema-scheduler/inspector` | MCPデバッグ用WebUI |
 
 ## Development Standards
@@ -68,6 +69,7 @@ pnpm test           # 全パッケージテスト
 pnpm scrape         # スクレイピング実行
 pnpm dev:mcp        # MCPサーバー開発
 pnpm dev:inspector  # Inspector WebUI起動
+pnpm cron:dev       # Cronジョブ開発（バックグラウンド推奨）
 ```
 
 ## Key Technical Decisions

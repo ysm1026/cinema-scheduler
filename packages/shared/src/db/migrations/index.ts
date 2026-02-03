@@ -1,5 +1,6 @@
 import type { Database } from 'sql.js';
 import { migration001 } from './001_initial.js';
+import { migration002 } from './002_add_audio_type.js';
 
 export interface Migration {
   version: number;
@@ -10,7 +11,7 @@ export interface Migration {
 /**
  * 登録されているマイグレーション一覧
  */
-export const migrations: Migration[] = [migration001];
+export const migrations: Migration[] = [migration001, migration002];
 
 /**
  * マイグレーションを実行する

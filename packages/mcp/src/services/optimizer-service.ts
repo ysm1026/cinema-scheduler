@@ -7,6 +7,7 @@ export interface Showtime {
   startTime: string; // HH:mm
   endTime: string; // HH:mm
   format: string | null;
+  audioType: string | null;
 }
 
 /**
@@ -31,6 +32,7 @@ export interface ScheduleItem {
   endTime: string;
   durationMinutes: number;
   format: string | null;
+  audioType: string | null;
   breakMinutesBefore: number;
 }
 
@@ -187,18 +189,32 @@ function generateSchedules(
     return;
   }
 
-  // 開始時間でソート（プレミアム優先も考慮）
+  // フォーマット優先度を定義
+  const getFormatPriority = (format: string | null): number => {
+    if (!format) return 0;
+    switch (format) {
+      case 'IMAX': return 100;
+      case 'DOLBY_CINEMA': return 90;
+      case 'DOLBY_ATMOS': return 80;
+      case 'TCX': return 70;
+      case 'GOOON': return 60;
+      case '4DX': return 50;
+      default: return 10;
+    }
+  };
+
+  // ソート: preferPremiumならフォーマット優先、そうでなければ時間優先
   validShowtimes.sort((a, b) => {
+    if (preferPremium) {
+      // フォーマット優先度で比較（高い順）
+      const aPriority = getFormatPriority(a.format);
+      const bPriority = getFormatPriority(b.format);
+      if (aPriority !== bPriority) return bPriority - aPriority;
+    }
+    // 同じフォーマット（または preferPremium=false）なら開始時間順
     const aMinutes = timeToMinutes(a.startTime);
     const bMinutes = timeToMinutes(b.startTime);
-    if (aMinutes !== bMinutes) return aMinutes - bMinutes;
-    if (preferPremium) {
-      const aIsPremium = a.format !== null;
-      const bIsPremium = b.format !== null;
-      if (aIsPremium && !bIsPremium) return -1;
-      if (!aIsPremium && bIsPremium) return 1;
-    }
-    return 0;
+    return aMinutes - bMinutes;
   });
 
   // 各候補について再帰
@@ -219,6 +235,7 @@ function generateSchedules(
       endTime: showtime.endTime,
       durationMinutes,
       format: showtime.format,
+      audioType: showtime.audioType,
       breakMinutesBefore: Math.max(0, breakMinutes),
     };
 
@@ -266,13 +283,66 @@ export function optimizeSchedule(options: OptimizeOptions): OptimizeResult {
     maxResults
   );
 
-  // 3. 観られる映画数でソート（多い順）、同数なら休憩時間が少ない順
+  // 3. ソート優先順位:
+  //    - 観られる映画数（多い順）
+  //    - プレミアムフォーマット数（多い順）★重要
+  //    - 休憩時間（少ない順）
+  const formatPriority = (format: string | null): number => {
+    if (!format) return 0;
+    switch (format) {
+      case 'IMAX': return 100;
+      case 'DOLBY_CINEMA': return 90;
+      case 'DOLBY_ATMOS': return 80;
+      case 'TCX': return 70;
+      case 'GOOON': return 60;
+      case '4DX': return 50;
+      default: return 10;
+    }
+  };
+
   results.sort((a, b) => {
+    // まず観られる映画数
     if (b.stats.totalMovies !== a.stats.totalMovies) {
       return b.stats.totalMovies - a.stats.totalMovies;
     }
+    // 次にプレミアムフォーマット数（IMAX等）を優先
+    if (b.stats.premiumCount !== a.stats.premiumCount) {
+      return b.stats.premiumCount - a.stats.premiumCount;
+    }
+    // 同じプレミアム数なら、フォーマットの優先度で比較
+    const aTotalPriority = a.schedule.reduce((sum, s) => sum + formatPriority(s.format), 0);
+    const bTotalPriority = b.schedule.reduce((sum, s) => sum + formatPriority(s.format), 0);
+    if (bTotalPriority !== aTotalPriority) {
+      return bTotalPriority - aTotalPriority;
+    }
+    // 最後に休憩時間
     return a.stats.totalBreakTimeMinutes - b.stats.totalBreakTimeMinutes;
   });
+
+  // 4. グランドシネマサンシャイン池袋のIMAX上映を含む候補を確保
+  //    第1候補に含まれていない場合、別候補として追加
+  const GRAND_CINEMA_SUNSHINE = 'グランドシネマサンシャイン池袋';
+
+  const hasGrandCinemaImax = (schedule: ScheduleItem[]): boolean => {
+    return schedule.some(
+      (s) => s.theater.includes(GRAND_CINEMA_SUNSHINE) && s.format === 'IMAX'
+    );
+  };
+
+  // 第1候補がグランドシネマサンシャインIMAXを含んでいない場合
+  if (results.length > 0 && !hasGrandCinemaImax(results[0]!.schedule)) {
+    // グランドシネマサンシャインIMAXを含む候補を探す
+    const grandCinemaCandidate = results.find((r) => hasGrandCinemaImax(r.schedule));
+
+    if (grandCinemaCandidate) {
+      // 既に含まれている場合は2番目に移動
+      const index = results.indexOf(grandCinemaCandidate);
+      if (index > 1) {
+        results.splice(index, 1);
+        results.splice(1, 0, grandCinemaCandidate);
+      }
+    }
+  }
 
   return {
     candidates: results,

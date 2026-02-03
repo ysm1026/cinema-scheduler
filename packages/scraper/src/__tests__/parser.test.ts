@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   detectPremiumFormat,
+  detectAudioType,
   formatDateYYYYMMDD,
   formatDateISO,
   parseTime,
@@ -30,6 +31,8 @@ describe('detectPremiumFormat', () => {
   it('should detect 4DX', () => {
     expect(detectPremiumFormat('4DX')).toBe('4DX');
     expect(detectPremiumFormat('MX4D')).toBe('4DX');
+    expect(detectPremiumFormat('4D吹替')).toBe('4DX');
+    expect(detectPremiumFormat('4D字幕')).toBe('4DX');
   });
 
   it('should detect SCREENX', () => {
@@ -40,6 +43,40 @@ describe('detectPremiumFormat', () => {
   it('should return null for standard format', () => {
     expect(detectPremiumFormat('通常上映')).toBeNull();
     expect(detectPremiumFormat('10:30')).toBeNull();
+  });
+
+  it('should detect GOOON (轟音)', () => {
+    expect(detectPremiumFormat('轟音上映')).toBe('GOOON');
+    expect(detectPremiumFormat('GOOON')).toBe('GOOON');
+    expect(detectPremiumFormat('GOUON')).toBe('GOOON');
+    expect(detectPremiumFormat('轟音シアター')).toBe('GOOON');
+  });
+
+  it('should detect TCX', () => {
+    expect(detectPremiumFormat('TCX')).toBe('TCX');
+    expect(detectPremiumFormat('TCXスクリーン')).toBe('TCX');
+    expect(detectPremiumFormat('TOHO CINEMAS eXtra')).toBe('TCX');
+  });
+});
+
+describe('detectAudioType', () => {
+  it('should detect subtitled', () => {
+    expect(detectAudioType('字幕')).toBe('subtitled');
+    expect(detectAudioType('IMAX字幕')).toBe('subtitled');
+    expect(detectAudioType('字幕版')).toBe('subtitled');
+  });
+
+  it('should detect dubbed', () => {
+    expect(detectAudioType('吹替')).toBe('dubbed');
+    expect(detectAudioType('吹き替え')).toBe('dubbed');
+    expect(detectAudioType('日本語版')).toBe('dubbed');
+    expect(detectAudioType('4D吹替')).toBe('dubbed');
+  });
+
+  it('should return null for unknown', () => {
+    expect(detectAudioType('通常')).toBeNull();
+    expect(detectAudioType('IMAX')).toBeNull();
+    expect(detectAudioType('10:30')).toBeNull();
   });
 });
 

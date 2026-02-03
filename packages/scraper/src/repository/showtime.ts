@@ -1,5 +1,5 @@
 import type { Database } from 'sql.js';
-import type { ShowtimeFormat } from '@cinema-scheduler/shared';
+import type { ShowtimeFormat, AudioType } from '@cinema-scheduler/shared';
 
 /**
  * 上映情報の入力型
@@ -11,6 +11,7 @@ export interface ShowtimeInput {
   startTime: string;
   endTime: string;
   format?: string;
+  audioType?: AudioType;
 }
 
 /**
@@ -24,6 +25,7 @@ export interface ShowtimeResult {
   startTime: string;
   endTime: string;
   format: ShowtimeFormat;
+  audioType: AudioType;
 }
 
 /**
@@ -48,16 +50,16 @@ export function upsertShowtime(db: Database, showtime: ShowtimeInput): number {
     showtimeId = stmt.getAsObject()['id'] as number;
     stmt.free();
 
-    // end_time, formatを更新
+    // end_time, format, audio_typeを更新
     db.run(
-      'UPDATE showtimes SET end_time = ?, format = ? WHERE id = ?',
-      [showtime.endTime, showtime.format ?? null, showtimeId]
+      'UPDATE showtimes SET end_time = ?, format = ?, audio_type = ? WHERE id = ?',
+      [showtime.endTime, showtime.format ?? null, showtime.audioType ?? null, showtimeId]
     );
   } else {
     stmt.free();
     // 新規INSERT
     db.run(
-      'INSERT INTO showtimes (theater_id, movie_id, date, start_time, end_time, format) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO showtimes (theater_id, movie_id, date, start_time, end_time, format, audio_type) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [
         showtime.theaterId,
         showtime.movieId,
@@ -65,6 +67,7 @@ export function upsertShowtime(db: Database, showtime: ShowtimeInput): number {
         showtime.startTime,
         showtime.endTime,
         showtime.format ?? null,
+        showtime.audioType ?? null,
       ]
     );
 
@@ -95,7 +98,8 @@ export function getShowtimesByDateAndArea(
       s.date,
       s.start_time,
       s.end_time,
-      s.format
+      s.format,
+      s.audio_type
     FROM showtimes s
     JOIN theaters t ON s.theater_id = t.id
     JOIN movies m ON s.movie_id = m.id
@@ -115,6 +119,7 @@ export function getShowtimesByDateAndArea(
       start_time: string;
       end_time: string;
       format: string | null;
+      audio_type: string | null;
     };
     showtimes.push({
       id: row.id,
@@ -124,6 +129,7 @@ export function getShowtimesByDateAndArea(
       startTime: row.start_time,
       endTime: row.end_time,
       format: (row.format as ShowtimeFormat) ?? null,
+      audioType: (row.audio_type as AudioType) ?? null,
     });
   }
   stmt.free();
@@ -131,40 +137,3 @@ export function getShowtimesByDateAndArea(
   return showtimes;
 }
 
-/**
- * 古いデータを削除（指定日より前のデータ）
- * @returns 削除された行数
- */
-export function deleteOldShowtimes(db: Database, beforeDate: string): number {
-  db.run('DELETE FROM showtimes WHERE date < ?', [beforeDate]);
-
-  // 変更された行数を取得
-  const changesStmt = db.prepare('SELECT changes() as count');
-  changesStmt.step();
-  const count = changesStmt.getAsObject()['count'] as number;
-  changesStmt.free();
-
-  return count;
-}
-
-/**
- * 指定日・映画館の上映情報を削除
- * @returns 削除された行数
- */
-export function deleteShowtimesByDateAndTheater(
-  db: Database,
-  date: string,
-  theaterId: number
-): number {
-  db.run('DELETE FROM showtimes WHERE date = ? AND theater_id = ?', [
-    date,
-    theaterId,
-  ]);
-
-  const changesStmt = db.prepare('SELECT changes() as count');
-  changesStmt.step();
-  const count = changesStmt.getAsObject()['count'] as number;
-  changesStmt.free();
-
-  return count;
-}

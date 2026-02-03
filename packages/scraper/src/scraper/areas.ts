@@ -6,13 +6,32 @@ import { parse } from 'yaml';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /**
+ * YAML設定ファイルの型定義
+ */
+interface AreaConfig {
+  aliases?: Record<string, string>;
+  [area: string]: string | Record<string, string> | undefined;
+}
+
+/**
  * YAMLファイルからエリアコードを読み込む
  */
 function loadAreaCodes(): Record<string, string> {
   // dist/scraper/areas.js から dist/config/areas.yaml を参照
   const configPath = join(__dirname, '../config/areas.yaml');
   const content = readFileSync(configPath, 'utf-8');
-  return parse(content) as Record<string, string>;
+  const config = parse(content) as AreaConfig;
+
+  // aliasesキーを除外し、エリアコードのみを抽出
+  const areaCodes: Record<string, string> = {};
+  for (const [key, value] of Object.entries(config)) {
+    // aliasesは除外、文字列値のみをエリアコードとして扱う
+    if (key !== 'aliases' && typeof value === 'string') {
+      areaCodes[key] = value;
+    }
+  }
+
+  return areaCodes;
 }
 
 /**

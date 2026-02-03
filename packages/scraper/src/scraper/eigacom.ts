@@ -1,8 +1,10 @@
 import { chromium } from 'playwright';
 import type { Browser, BrowserContext, Page } from 'playwright';
+import type { AudioType } from '@cinema-scheduler/shared';
 import { AREA_CODES } from './areas.js';
 import {
   detectPremiumFormat,
+  detectAudioType,
   formatDateYYYYMMDD,
   calculateEndTime,
 } from './parser.js';
@@ -19,6 +21,7 @@ export interface ScrapedShowtime {
   endTime: string; // HH:mm
   runtimeMinutes: number;
   format: string | null;
+  audioType: AudioType;
 }
 
 /**
@@ -178,6 +181,62 @@ export class EigacomScraper {
             formatText: string;
           }> = [];
 
+          /**
+           * テーブルの直前にある上映形式テキストを取得する
+           * eiga.comでは形式ごとにtableが分かれており、その前に形式名がある
+           * 例: "IMAX字幕" "Dolby Atmos吹替" "4DX字幕" 等
+           */
+          const getFormatFromTable = (table: Element): string => {
+            const formatPattern = /IMAX|Dolby|ドルビー|4DX|4D|MX4D|SCREEN\s*X|轟音|TCX|BESTIA/i;
+
+            // 1. tableの最初の行（ヘッダー行）をチェック
+            const firstRow = table.querySelector('tr');
+            if (firstRow) {
+              const headerText = firstRow.textContent?.trim() ?? '';
+              if (formatPattern.test(headerText)) {
+                return headerText;
+              }
+            }
+
+            // 2. tableの直前の兄弟要素をチェック
+            let prevSibling = table.previousElementSibling;
+            while (prevSibling) {
+              const text = prevSibling.textContent?.trim() ?? '';
+              if (formatPattern.test(text) || /字幕|吹替|通常/i.test(text)) {
+                return text;
+              }
+              break;
+            }
+
+            // 3. 親のdiv/section内でtableより前のテキストを確認
+            const parent = table.parentElement;
+            if (parent) {
+              const children = Array.from(parent.children);
+              const tableIndex = children.indexOf(table);
+              for (let i = tableIndex - 1; i >= 0 && i >= tableIndex - 2; i--) {
+                const child = children[i];
+                if (child && child.tagName !== 'TABLE') {
+                  const text = child.textContent?.trim() ?? '';
+                  if (formatPattern.test(text)) {
+                    return text;
+                  }
+                }
+              }
+            }
+
+            // 4. table内のth要素をチェック（形式がヘッダーに含まれている場合）
+            const thElements = table.querySelectorAll('th');
+            for (let i = 0; i < thElements.length; i++) {
+              const th = thElements[i];
+              const thText = th?.textContent?.trim() ?? '';
+              if (formatPattern.test(thText)) {
+                return thText;
+              }
+            }
+
+            return '';
+          };
+
           const titleElements = document.querySelectorAll(
             'h2.title-xlarge a[href*="/movie/"]'
           );
@@ -203,6 +262,10 @@ export class EigacomScraper {
             );
 
             dateCells.forEach((cell) => {
+              // セルの親テーブルからフォーマット情報を取得
+              const table = cell.closest('table');
+              const formatText = table ? getFormatFromTable(table) : '';
+
               // a.btn, a.ticket2 (シネコン) または span (ミニシアター) を取得
               const timeElements = cell.querySelectorAll(
                 'a.btn, a.ticket2, span, a[class*="ticket"]'
@@ -238,10 +301,12 @@ export class EigacomScraper {
                       }
                     }
 
-                    // 重複チェック
+                    // 重複チェック（同じ映画・開始時間・フォーマットの組み合わせ）
                     const existing = results.find(
                       (r) =>
-                        r.movieTitle === rawTitle && r.startTime === startTime
+                        r.movieTitle === rawTitle &&
+                        r.startTime === startTime &&
+                        r.formatText === formatText
                     );
                     if (!existing) {
                       results.push({
@@ -252,7 +317,7 @@ export class EigacomScraper {
                         startTime,
                         endTime,
                         runtimeMinutes,
-                        formatText: text,
+                        formatText,
                       });
                     }
                   }
@@ -276,6 +341,7 @@ export class EigacomScraper {
         endTime: s.endTime || calculateEndTime(s.startTime, s.runtimeMinutes),
         runtimeMinutes: s.runtimeMinutes,
         format: detectPremiumFormat(s.formatText),
+        audioType: detectAudioType(s.formatText),
       }));
     } catch (error) {
       console.error(`[ERROR] ${theaterName} のスケジュール取得失敗:`, error);

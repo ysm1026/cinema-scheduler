@@ -1,4 +1,4 @@
-import type { ShowtimeFormat } from '@cinema-scheduler/shared';
+import type { ShowtimeFormat, AudioType } from '@cinema-scheduler/shared';
 
 /**
  * Premium format detection patterns
@@ -9,8 +9,10 @@ const PREMIUM_FORMAT_PATTERNS: Array<{ pattern: RegExp; format: ShowtimeFormat }
   { pattern: /ドルビーシネマ|Dolby\s*Cinema/i, format: 'DOLBY_CINEMA' },
   { pattern: /ドルビーアトモス|Dolby\s*Atmos/i, format: 'DOLBY_ATMOS' },
   { pattern: /SCREEN\s*X/i, format: 'SCREENX' },
-  { pattern: /4DX/i, format: '4DX' },
+  { pattern: /4DX|4D/i, format: '4DX' },
   { pattern: /MX4D/i, format: '4DX' },
+  { pattern: /轟音|GOOON|GOUON/i, format: 'GOOON' },
+  { pattern: /TCX|TOHO\s*CINEMAS\s*eXtra/i, format: 'TCX' },
 ];
 
 /**
@@ -21,6 +23,21 @@ export function detectPremiumFormat(text: string): ShowtimeFormat {
     if (pattern.test(text)) {
       return format;
     }
+  }
+  return null;
+}
+
+/**
+ * Detects audio type (subtitled/dubbed) from text
+ */
+export function detectAudioType(text: string): AudioType {
+  // 字幕版の検出
+  if (/字幕|subtitled/i.test(text)) {
+    return 'subtitled';
+  }
+  // 吹替版の検出
+  if (/吹替|吹き替え|日本語版|dubbed/i.test(text)) {
+    return 'dubbed';
   }
   return null;
 }

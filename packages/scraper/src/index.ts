@@ -191,3 +191,4 @@ export async function runScraper(options: ScrapeOptions): Promise<ScrapeResult[]
 export { EigacomScraper, createScraper, type ScrapedShowtime, type ScraperConfig } from './scraper/eigacom.js';
 export * from './scraper/areas.js';
 export * from './repository/index.js';
+export * from './config.js';

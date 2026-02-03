@@ -68,10 +68,10 @@ describe('Database Connection', () => {
     `);
 
     expect(result[0]?.values.length).toBe(1);
-    // showtimes: id(0), theater_id(1), movie_id(2), date(3), start_time(4), end_time(5), format(6)
-    // + theater_name(7), movie_title(8)
-    expect(result[0]?.values[0]?.[7]).toBe('新宿バルト9');
-    expect(result[0]?.values[0]?.[8]).toBe('ズートピア2');
+    // showtimes: id(0), theater_id(1), movie_id(2), date(3), start_time(4), end_time(5), format(6), audio_type(7)
+    // + theater_name(8), movie_title(9)
+    expect(result[0]?.values[0]?.[8]).toBe('新宿バルト9');
+    expect(result[0]?.values[0]?.[9]).toBe('ズートピア2');
   });
 
   it('should enforce unique constraint on theaters', () => {

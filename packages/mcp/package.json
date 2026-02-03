@@ -19,6 +19,7 @@
     "@cinema-scheduler/shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.4.1",
     "sql.js": "^1.12.0",
+    "yaml": "^2.8.2",
     "zod": "^3.24.2"
   },
   "devDependencies": {

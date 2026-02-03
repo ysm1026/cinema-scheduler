@@ -33,5 +33,21 @@
 | `optimize_schedule` | 複数映画の最適スケジュールを生成 |
 | `get_data_status` | スクレイピングデータの状態を確認 |
 
+## Supported Premium Formats
+
+MCPツールは以下のプレミアム上映形式を検出・サポートします：
+
+| Format | Description | 表記例 |
+|--------|-------------|--------|
+| `IMAX` | IMAXシアター（レーザー含む） | IMAX, IMAXレーザー |
+| `DOLBY_CINEMA` | ドルビーシネマ | ドルビーシネマ, Dolby Cinema |
+| `DOLBY_ATMOS` | ドルビーアトモス音響 | ドルビーアトモス, Dolby Atmos |
+| `4DX` | 体感型4Dシアター | 4DX, MX4D |
+| `SCREENX` | 3面スクリーン | SCREEN X, ScreenX |
+| `GOOON` | 轟音シアター（没入型音響） | 轟音 |
+| `TCX` | TOHOシネマズ大型スクリーン | TCX, TOHO CINEMAS eXtra |
+
+**注記**: 上映形式がない場合は `null` が返されます（通常上映）。
+
 ---
 _Focus on patterns and purpose, not exhaustive feature lists_

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Database } from 'sql.js';
+import { resolveAreaNames } from '../services/area-resolver.js';
 
 /**
  * パラメータスキーマ
@@ -35,10 +36,15 @@ interface ListTheatersResponse {
 export function registerListTheaters(server: McpServer, db: Database): void {
   server.tool(
     'list_theaters',
-    'エリアの映画館リストを取得する',
+    `【必須】エリアの映画館一覧を調べるときはこのツールを使用してください。
+
+このツールを使うべき場面:
+- 「新宿の映画館は？」「池袋にある映画館を教えて」などの質問
+- 特定エリアの映画館名やチェーン情報の確認`,
     inputSchema.shape,
     async (input: Input) => {
-      const areas = input.areas ?? [];
+      // エイリアスを解決（日比谷→有楽町など）
+      const areas = input.areas ? resolveAreaNames(input.areas) : [];
 
       let query = `
         SELECT name, area, chain

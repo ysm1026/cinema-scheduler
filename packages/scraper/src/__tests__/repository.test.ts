@@ -14,7 +14,6 @@ import {
 import {
   upsertShowtime,
   getShowtimesByDateAndArea,
-  deleteOldShowtimes,
 } from '../repository/showtime.js';
 import {
   addScrapeLog,
@@ -185,28 +184,6 @@ describe('Repository Layer', () => {
       expect(showtimes[1]?.startTime).toBe('12:00');
     });
 
-    it('should delete old showtimes', () => {
-      upsertShowtime(db, {
-        theaterId,
-        movieId,
-        date: '2026-01-28',
-        startTime: '10:00',
-        endTime: '11:48',
-      });
-      upsertShowtime(db, {
-        theaterId,
-        movieId,
-        date: '2026-01-30',
-        startTime: '10:00',
-        endTime: '11:48',
-      });
-
-      const deleted = deleteOldShowtimes(db, '2026-01-29');
-      expect(deleted).toBe(1);
-
-      const remaining = getShowtimesByDateAndArea(db, '2026-01-30', '新宿');
-      expect(remaining).toHaveLength(1);
-    });
   });
 
   describe('ScrapeLogRepository', () => {

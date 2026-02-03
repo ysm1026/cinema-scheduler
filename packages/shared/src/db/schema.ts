@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS showtimes (
   start_time TEXT NOT NULL,
   end_time TEXT NOT NULL,
   format TEXT,
+  audio_type TEXT,
   FOREIGN KEY (theater_id) REFERENCES theaters(id),
   FOREIGN KEY (movie_id) REFERENCES movies(id),
   UNIQUE(theater_id, movie_id, date, start_time)

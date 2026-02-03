@@ -1,7 +1,12 @@
 /**
- * 上映形式
+ * 上映形式（プレミアムフォーマット）
  */
-export type ShowtimeFormat = 'IMAX' | 'DOLBY_CINEMA' | 'DOLBY_ATMOS' | '4DX' | 'SCREENX' | null;
+export type ShowtimeFormat = 'IMAX' | 'DOLBY_CINEMA' | 'DOLBY_ATMOS' | '4DX' | 'SCREENX' | 'GOOON' | 'TCX' | null;
+
+/**
+ * 音声タイプ（字幕/吹替）
+ */
+export type AudioType = 'subtitled' | 'dubbed' | null;
 
 /**
  * 上映スケジュール情報
@@ -14,6 +19,7 @@ export interface Showtime {
   startTime: string; // HH:mm
   endTime: string; // HH:mm
   format: ShowtimeFormat;
+  audioType: AudioType;
 }
 
 /**
@@ -26,6 +32,7 @@ export interface ShowtimeInput {
   startTime: string;
   endTime: string;
   format?: ShowtimeFormat;
+  audioType?: AudioType;
 }
 
 /**
@@ -41,6 +48,7 @@ export interface ShowtimeWithDetails {
   endTime: string;
   durationMinutes: number;
   format: ShowtimeFormat;
+  audioType: AudioType;
 }
 
 /**

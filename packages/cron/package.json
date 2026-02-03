@@ -1,0 +1,32 @@
+{
+  "name": "@cinema-scheduler/cron",
+  "version": "1.0.0",
+  "description": "Cron jobs for cinema scheduler (scraping + Google Sheets export)",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc && cp -r config dist/",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "scrape": "tsx src/jobs/scrape.ts",
+    "export": "tsx src/jobs/export-sheets.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cinema-scheduler/scraper": "workspace:*",
+    "@cinema-scheduler/shared": "workspace:*",
+    "googleapis": "^144.0.0",
+    "node-cron": "^3.0.3",
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0",
+    "yaml": "^2.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "@types/node-cron": "^3.0.11",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}

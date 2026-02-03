@@ -1,0 +1,30 @@
+# Cinema Scheduler Cron設定ファイル
+
+# スクレイピング設定
+scrape:
+  # 対象エリア（コメントアウトで全エリア）
+  # areas:
+  #   - 新宿
+  #   - 池袋
+  #   - 渋谷
+
+  # 何日先までスクレイピングするか（1-7）
+  days: 3
+
+# Googleスプレッドシート連携設定
+googleSheets:
+  # サービスアカウントのJSONキーファイルパス
+  # Google Cloud Consoleからダウンロードしたキーファイルを指定
+  keyFilePath: ./config/service-account.json
+
+  # 出力先スプレッドシートのID
+  # URLの https://docs.google.com/spreadsheets/d/{ID}/edit の {ID} 部分
+  spreadsheetId: "1ZFGiPdNQnczczx9PwxqlfjJTWr_fP8KJXeeVLjNEOrw"
+
+# cronスケジュール設定
+schedule:
+  # スクレイピング実行時刻（cron式、日本時間）
+  scrape: "0 5 * * *"  # 毎日 06:00
+
+  # スプレッドシートエクスポート実行時刻（cron式、日本時間）
+  export: "0 7 * * *"  # 毎日 07:00

@@ -19,7 +19,8 @@ src/
 │   └── optimize-schedule.ts
 └── services/              # ビジネスロジック
     ├── optimizer-service.ts
-    └── title-matcher.ts
+    ├── title-matcher.ts
+    └── area-resolver.ts   # エリア名エイリアス解決
 ```
 
 ### Scraper (`packages/scraper/`)
@@ -54,6 +55,21 @@ src/
     ├── connection.ts      # sql.js接続管理
     ├── schema.ts          # テーブル定義
     └── migrations/        # マイグレーション
+```
+
+### Cron (`packages/cron/`)
+**Purpose**: 定期実行ジョブ（スクレイピング + エクスポート）
+**Pattern**: node-cronでスケジュール、pm2でバックグラウンド実行推奨
+```
+src/
+├── index.ts               # Cronデーモンエントリーポイント
+├── config.ts              # YAML設定読み込み
+└── jobs/
+    ├── scrape.ts          # スクレイピングジョブ
+    └── export-sheets.ts   # Googleスプレッドシートエクスポート
+config/
+├── cron.yaml              # スケジュール・エクスポート設定
+└── service-account.json   # Google API認証（gitignore対象）
 ```
 
 ### Inspector (`packages/inspector/`)

@@ -6,6 +6,7 @@ import {
   type Showtime,
   type OptimizeResult,
 } from '../services/optimizer-service.js';
+import { resolveAreaNames } from '../services/area-resolver.js';
 
 /**
  * 今日の日付をYYYY-MM-DD形式で取得
@@ -62,16 +63,27 @@ type Input = z.infer<typeof inputSchema>;
 export function registerOptimizeSchedule(server: McpServer, db: Database): void {
   server.tool(
     'optimize_schedule',
-    '複数の映画を効率よく観るためのスケジュールを最適化する',
+    `【必須】複数の映画をまとめて観たい・はしごしたいときはこのツールを使用してください。
+
+このツールを使うべき場面:
+- 「○○と△△を1日で観たい」などの映画マラソン・はしご視聴の計画
+- 複数映画の効率的なスケジュール組み立て
+- 映画間の移動時間を考慮した最適な上映回の選択
+
+【結果の提示ルール】
+- IMAX/Dolby Cinema等のプレミアムフォーマットを優先
+- フォーマット優先順位: IMAX > DOLBY_CINEMA > DOLBY_ATMOS > TCX > GOOON > 4DX > 通常
+- 字幕/吹替(audioType)を明示すること`,
     inputSchema.shape,
     async (input: Input) => {
       const {
         movieTitles,
-        areas,
         timeRange,
         bufferMinutes = 30,
         preferPremium = false,
       } = input;
+      // エイリアスを解決（日比谷→有楽町など）
+      const areas = resolveAreaNames(input.areas);
       const date = input.date ?? getTodayDate();
 
       // 上映データを取得（複数エリア対応）
@@ -83,7 +95,8 @@ export function registerOptimizeSchedule(server: McpServer, db: Database): void 
           t.area as area,
           s.start_time as startTime,
           s.end_time as endTime,
-          s.format
+          s.format,
+          s.audio_type as audioType
         FROM showtimes s
         JOIN theaters t ON s.theater_id = t.id
         JOIN movies m ON s.movie_id = m.id
@@ -104,6 +117,7 @@ export function registerOptimizeSchedule(server: McpServer, db: Database): void 
             startTime: string;
             endTime: string;
             format: string | null;
+            audioType: string | null;
           };
           showtimes.push({
             movieTitle: row.movieTitle,
@@ -111,6 +125,7 @@ export function registerOptimizeSchedule(server: McpServer, db: Database): void 
             startTime: row.startTime,
             endTime: row.endTime,
             format: row.format,
+            audioType: row.audioType,
           });
         }
         stmt.free();
@@ -131,6 +146,29 @@ export function registerOptimizeSchedule(server: McpServer, db: Database): void 
             ],
             isError: true,
           };
+        }
+
+        // 各映画のフォーマット別上映時間サマリーを作成
+        const formatSummary: Record<string, Record<string, string[]>> = {};
+        for (const title of movieTitles) {
+          const movieShowtimes = showtimes.filter(s =>
+            s.movieTitle.includes(title) || title.includes(s.movieTitle)
+          );
+
+          if (movieShowtimes.length > 0) {
+            formatSummary[title] = {};
+            for (const s of movieShowtimes) {
+              const format = s.format ?? '通常';
+              if (!formatSummary[title][format]) {
+                formatSummary[title][format] = [];
+              }
+              formatSummary[title][format].push(s.startTime);
+            }
+            // 各フォーマットの時間をソート
+            for (const format of Object.keys(formatSummary[title])) {
+              formatSummary[title][format].sort();
+            }
+          }
         }
 
         // スケジュール最適化
@@ -154,6 +192,7 @@ export function registerOptimizeSchedule(server: McpServer, db: Database): void 
                   code: 'NO_SCHEDULE',
                   message: '条件に合うスケジュールが見つかりませんでした',
                   suggestion: '時間帯を広げるか、映画の数を減らしてください',
+                  formatSummary,
                 }),
               },
             ],
@@ -161,11 +200,18 @@ export function registerOptimizeSchedule(server: McpServer, db: Database): void 
           };
         }
 
+        // レスポンスにフォーマットサマリーを追加
+        const response = {
+          ...result,
+          formatSummary,
+          _aiNote: '【重要】formatSummaryを確認し、各映画で最も優先度の高いフォーマット（IMAX > DOLBY_CINEMA > DOLBY_ATMOS > TCX > GOOON > 4DX > 通常）を選択してください。',
+        };
+
         return {
           content: [
             {
               type: 'text' as const,
-              text: JSON.stringify(result, null, 2),
+              text: JSON.stringify(response, null, 2),
             },
           ],
         };

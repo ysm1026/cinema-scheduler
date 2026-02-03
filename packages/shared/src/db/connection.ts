@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { SCHEMA_SQL } from './schema.js';
+import { runMigrations } from './migrations/index.js';
 
 const DB_DIR = join(homedir(), '.cinema-scheduler');
 const DB_PATH = join(DB_DIR, 'data.db');
@@ -48,9 +49,13 @@ export async function openDatabase(options?: {
   if (existsSync(DB_PATH)) {
     const buffer = readFileSync(DB_PATH);
     db = new sql.Database(buffer);
+    // 既存DBにマイグレーションを適用
+    runMigrations(db);
   } else {
     db = new sql.Database();
     db.run(SCHEMA_SQL);
+    // 新規DBにもマイグレーション記録を作成
+    runMigrations(db);
     saveDatabase(db);
   }
 
