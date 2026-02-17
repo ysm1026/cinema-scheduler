@@ -7,14 +7,15 @@
 ## Package Patterns
 
 ### MCP Server (`packages/mcp/`)
-**Purpose**: Claude Desktop向けMCPサーバー + Cloud Run HTTP サーバー（計画中）
+**Purpose**: Claude Desktop向けMCPサーバー + Cloud Run HTTP サーバー（本番稼働中）
 **Pattern**: ツールごとにファイル分離、`tools/index.ts`で一括登録（`registerTools`パターン）、サービス層で複雑なロジックを実装。デュアルエントリーポイント（stdio / HTTP）でトランスポートのみ分離。
 ```
 src/
 ├── server.ts              # MCPサーバーエントリーポイント（stdioトランスポート）
-├── handler.ts             # [計画中] Cloud Run用HTTPエントリーポイント（Express + StreamableHTTPServerTransport）
-├── auth.ts                # [計画中] APIキー認証ミドルウェア
-├── rate-limit.ts          # [計画中] IPベースレート制限ミドルウェア
+├── handler.ts             # Cloud Run用HTTPエントリーポイント（Express + StreamableHTTPServerTransport）
+├── middleware/             # Express ミドルウェア
+│   ├── auth.ts            # APIキー認証ミドルウェア
+│   └── rate-limit.ts      # IPベースレート制限ミドルウェア
 ├── tools/                 # MCPツール定義（トランスポート非依存）
 │   ├── index.ts           # registerTools() - 全ツール一括登録
 │   ├── list-movies.ts
@@ -25,7 +26,7 @@ src/
 └── services/              # ビジネスロジック
     ├── optimizer-service.ts
     ├── title-matcher.ts
-    └── area-resolver.ts   # エリア名エイリアス解決
+    └── area-resolver.ts   # エリア名エイリアス解決（埋め込みエイリアスマップ）
 ```
 
 ### Scraper (`packages/scraper/`)
@@ -59,21 +60,22 @@ src/
 │   ├── movie.ts
 │   └── showtime.ts
 └── db/                    # データベース
-    ├── connection.ts      # sql.js接続管理（openDatabase/saveDatabase/reloadDatabaseSync/createAutoReloadProxy）
-    ├── gcs-storage.ts     # [計画中] GCS読み書き抽象化
+    ├── connection.ts      # sql.js接続管理（openDatabase/saveDatabase/openDatabaseFromGcs/createGcsAutoReloadProxy）
+    ├── gcs-storage.ts     # GCS読み書き抽象化（download/upload/getMetadata）
     ├── schema.ts          # テーブル定義
     └── migrations/        # マイグレーション（連番ファイル: 001_initial, 002_add_audio_type...）
 ```
 
 ### Cron (`packages/cron/`)
-**Purpose**: 定期実行ジョブ（スクレイピング + エクスポート）
-**Pattern**: node-cronでスケジュール、pm2でバックグラウンド実行推奨
+**Purpose**: 定期実行ジョブ（スクレイピング + エクスポート）+ Cloud Run Job エントリーポイント
+**Pattern**: node-cronでスケジュール（ローカル）、Cloud Run Job で定期実行（本番）
 ```
 src/
-├── index.ts               # Cronデーモンエントリーポイント
+├── index.ts               # Cronデーモンエントリーポイント（ローカル用）
 ├── config.ts              # YAML設定読み込み
 └── jobs/
-    ├── scrape.ts          # スクレイピングジョブ
+    ├── scrape.ts          # ローカルスクレイピングジョブ
+    ├── scrape-cloud.ts    # Cloud Run Job 用エントリーポイント（GCS連携 + データ完全性チェック）
     └── export-sheets.ts   # Googleスプレッドシートエクスポート
 config/
 ├── cron.yaml              # スケジュール・エクスポート設定
@@ -145,15 +147,15 @@ import { openDatabase } from '@cinema-scheduler/shared';
 import { matchTitle } from '../services/title-matcher.js';
 ```
 
-### Infrastructure (`infra/`) — 計画中
+### Infrastructure (`infra/`) — 本番稼働中
 **Purpose**: GCPインフラのTerraform定義
 **Pattern**: フラット構成（リソース数が少ないためモジュール分割しない）
 ```
 infra/
-├── main.tf                # Cloud Run Service/Job, GCS, Scheduler, AR, SM
-├── variables.tf           # パラメータ定義
+├── main.tf                # Cloud Run Service/Job, GCS, Cloud Scheduler, Artifact Registry, Secret Manager
+├── variables.tf           # パラメータ定義（CPU/メモリ/リトライ数等）
 ├── outputs.tf             # 出力値
-└── terraform.tfvars       # 環境固有値
+└── terraform.tfvars       # 環境固有値（gitignore対象外）
 ```
 
 ## Code Organization Principles

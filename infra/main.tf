@@ -36,6 +36,8 @@ resource "google_project_service" "apis" {
     "cloudfunctions.googleapis.com",
     "cloudbuild.googleapis.com",
     "eventarc.googleapis.com",
+    "iamcredentials.googleapis.com",
+    "iam.googleapis.com",
   ])
   service            = each.key
   disable_on_destroy = false
@@ -383,4 +385,77 @@ resource "google_cloudfunctions2_function" "budget_shutdown" {
     google_project_service.apis,
     google_storage_bucket_object.budget_shutdown_source,
   ]
+}
+
+# --- Workload Identity Federation (GitHub Actions CI/CD) ---
+resource "google_service_account" "github_actions" {
+  count        = var.github_repo != "" ? 1 : 0
+  account_id   = "github-actions-deploy"
+  display_name = "GitHub Actions Deploy"
+}
+
+resource "google_iam_workload_identity_pool" "github" {
+  count                     = var.github_repo != "" ? 1 : 0
+  workload_identity_pool_id = "github-actions"
+  display_name              = "GitHub Actions"
+  depends_on                = [google_project_service.apis]
+}
+
+resource "google_iam_workload_identity_pool_provider" "github" {
+  count                              = var.github_repo != "" ? 1 : 0
+  workload_identity_pool_id          = google_iam_workload_identity_pool.github[0].workload_identity_pool_id
+  workload_identity_pool_provider_id = "github-oidc"
+  display_name                       = "GitHub OIDC"
+
+  attribute_mapping = {
+    "google.subject"       = "assertion.sub"
+    "attribute.actor"      = "assertion.actor"
+    "attribute.repository" = "assertion.repository"
+  }
+
+  attribute_condition = "assertion.repository == \"${var.github_repo}\""
+
+  oidc {
+    issuer_uri = "https://token.actions.githubusercontent.com"
+  }
+}
+
+# GitHub Actions SA → Artifact Registry writer
+resource "google_artifact_registry_repository_iam_member" "github_ar_writer" {
+  count      = var.github_repo != "" ? 1 : 0
+  location   = google_artifact_registry_repository.main.location
+  repository = google_artifact_registry_repository.main.name
+  role       = "roles/artifactregistry.writer"
+  member     = "serviceAccount:${google_service_account.github_actions[0].email}"
+}
+
+# GitHub Actions SA → Cloud Run admin (deploy service)
+resource "google_project_iam_member" "github_run_admin" {
+  count   = var.github_repo != "" ? 1 : 0
+  project = var.project_id
+  role    = "roles/run.admin"
+  member  = "serviceAccount:${google_service_account.github_actions[0].email}"
+}
+
+# GitHub Actions SA → act as Cloud Run service accounts
+resource "google_service_account_iam_member" "github_act_as_mcp" {
+  count              = var.github_repo != "" ? 1 : 0
+  service_account_id = google_service_account.mcp.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.github_actions[0].email}"
+}
+
+resource "google_service_account_iam_member" "github_act_as_scraper" {
+  count              = var.github_repo != "" ? 1 : 0
+  service_account_id = google_service_account.scraper.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.github_actions[0].email}"
+}
+
+# WIF → GitHub Actions SA impersonation
+resource "google_service_account_iam_member" "github_wif_binding" {
+  count              = var.github_repo != "" ? 1 : 0
+  service_account_id = google_service_account.github_actions[0].name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github[0].name}/attribute.repository/${var.github_repo}"
 }

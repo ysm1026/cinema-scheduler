@@ -27,3 +27,13 @@ output "scraper_service_account_email" {
   description = "Scraper service account email"
   value       = google_service_account.scraper.email
 }
+
+output "wif_provider" {
+  description = "Workload Identity Federation provider resource name"
+  value       = var.github_repo != "" ? google_iam_workload_identity_pool_provider.github[0].name : ""
+}
+
+output "wif_service_account_email" {
+  description = "GitHub Actions deploy service account email"
+  value       = var.github_repo != "" ? google_service_account.github_actions[0].email : ""
+}

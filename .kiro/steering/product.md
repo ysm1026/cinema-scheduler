@@ -20,15 +20,17 @@
 
 | Mode | Transport | DB Source | Target Users |
 |------|-----------|-----------|-------------|
-| ローカル（現行） | stdio | `~/.cinema-scheduler/data.db` | 開発者（Claude Desktop） |
-| Cloud Run（計画中） | HTTP (Express + StreamableHTTPServerTransport) | GCS → sql.js インメモリ | パブリック MCP クライアント |
+| ローカル | stdio | `~/.cinema-scheduler/data.db` | 開発者（Claude Desktop） |
+| Cloud Run（本番稼働中） | HTTP (Express + StreamableHTTPServerTransport) | GCS → sql.js インメモリ（自動リロード） | パブリック MCP クライアント |
 
-詳細は `.kiro/specs/cloud-run-deploy/` を参照。
+- **MCP Service**: Cloud Run Service（HTTP エンドポイント、GCS からの DB 自動リロード付き）
+- **Scraper Job**: Cloud Run Job（Cloud Scheduler で定期実行、GCS アップロード前のデータ完全性チェック付き）
+- **インフラ**: Terraform で GCP リソースを管理（`infra/`）
 
 ## Value Proposition
 
 - **MCP統合**: Claude Desktopのネイティブツールとして動作
-- **パブリック公開（計画中）**: Cloud Run 経由で任意の MCP クライアントからアクセス可能
+- **パブリック公開（本番稼働中）**: Cloud Run 経由で任意の MCP クライアントからアクセス可能
 - **動的データ取得**: JavaScriptで生成される映画館サイトに対応
 - **複数候補提案**: 単一解ではなく複数のスケジュール候補を提示
 - **曖昧検索**: ユーザーの入力揺れを吸収（「ランニングマン」→「ランニング・マン」）

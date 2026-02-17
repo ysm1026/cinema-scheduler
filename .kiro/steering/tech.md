@@ -23,14 +23,14 @@
                                               └─────────────────┘
 ```
 
-### Cloud Run 環境（計画中 — `.kiro/specs/cloud-run-deploy/`）
+### Cloud Run 環境（本番稼働中）
 ```
 ┌─────────────────┐    ┌─────────────────┐
 │ Public Clients  │───►│ Cloud Run Svc   │ (HTTP/Express + StreamableHTTPServerTransport)
 └─────────────────┘    └────────┬────────┘
                                 │
                        ┌────────▼────────┐
-                       │  GCS → sql.js   │ (data.db をメモリに展開)
+                       │  GCS → sql.js   │ (data.db をメモリに展開、5分間隔で自動リロード)
                        └────────▲────────┘
                                 │
 ┌─────────────────┐    ┌────────┴────────┐    ┌─────────────────┐
@@ -38,6 +38,7 @@
 └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 **デュアルエントリーポイントパターン**: `server.ts`（stdio）と `handler.ts`（HTTP）でトランスポートのみ分離。ツール登録ロジック（`registerTools`）は共有。
+**GCS 自動リロード**: `createGcsAutoReloadProxy` で generation ベースの変更検知 + Proxy パターンで DB を透過的に入れ替え。
 
 ## Core Technologies
 
@@ -99,26 +100,32 @@ pnpm cron:dev       # Cronジョブ開発（バックグラウンド推奨）
 2. **eiga.com統合**: 複数映画館チェーンの情報を一元的に取得可能
 3. **MCPプロトコル**: Claude Desktopとのネイティブ統合でシームレスな対話体験
 4. **モノレポ構成**: 関連パッケージの一元管理と型共有
-5. **DB自動リロード**: `createAutoReloadProxy`でファイル変更を検知し、Cron/Scraper更新を即時反映
+5. **DB自動リロード**: ローカルは`createAutoReloadProxy`でファイル変更検知、Cloud Run は`createGcsAutoReloadProxy`で GCS generation 変更検知
 6. **ローカルタイムゾーン日付処理**: `new Date().toISOString().split('T')[0]`（UTC）ではなく、`getFullYear()/getMonth()/getDate()`でローカル日付を取得（日本時間でのずれを防止）
 
 ## Data Storage
 
 - **ローカル**: `~/.cinema-scheduler/data.db`（sql.jsファイルベース）
-- **Cloud Run（計画中）**: GCSバケット上の`data.db` → 起動時にダウンロードしてsql.jsインメモリ展開
+- **Cloud Run（本番稼働中）**: GCSバケット上の`data.db` → 起動時にダウンロード → sql.jsインメモリ展開 → generation ベースで5分間隔自動リロード
 - **Format**: SQLite (via sql.js)
 - **Tables**: theaters, movies, showtimes, scrape_logs
 
-## Cloud Run 追加技術スタック（計画中）
+## Cloud Run 技術スタック（本番稼働中）
 
 | Technology | Purpose |
 |-----------|---------|
-| Express ^4.21 | HTTP サーバー + ミドルウェア |
+| Express ^5 | HTTP サーバー + ミドルウェア |
 | StreamableHTTPServerTransport | MCP SDK HTTP トランスポート |
 | @google-cloud/storage ^7 | GCS 連携（ADC 自動認証） |
-| express-rate-limit ^7 | IP ベースレート制限 |
+| express-rate-limit ^8 | IP ベースレート制限 |
 | Terraform (hashicorp/google) | GCP インフラ定義 |
 | GitHub Actions + WIF | CI/CD（Workload Identity Federation） |
+
+### スクレイパー最適化
+- **並列実行**: ワーカープール方式（`runConcurrent`）、デフォルト同時実行数3
+- **重複スキップ**: 既存データのある映画館をスキップし、スクレイピング時間を短縮
+- **タスクタイムアウト**: 個別タスク10分タイムアウト（ワーカーは次タスクへ継続）
+- **データ完全性チェック**: GCS アップロード前にエリアカバレッジとショータイム数の減少を検証
 
 ---
 _Document standards and patterns, not every dependency_
