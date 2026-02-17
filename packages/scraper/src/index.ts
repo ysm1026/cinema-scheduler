@@ -8,6 +8,7 @@ import { createScraper, type ScrapedShowtime, type ScraperConfig } from './scrap
 import { upsertTheater } from './repository/theater.js';
 import { upsertMovie } from './repository/movie.js';
 import { upsertShowtime } from './repository/showtime.js';
+import { getScrapedTheaterNames } from './repository/showtime.js';
 import { addScrapeLog } from './repository/scrape-log.js';
 
 /**
@@ -19,6 +20,7 @@ export interface ScrapeOptions {
   dryRun: boolean;
   logger: Logger;
   scraperConfig?: ScraperConfig;
+  concurrency?: number;
 }
 
 /**
@@ -30,6 +32,7 @@ export interface ScrapeResult {
   showtimeCount: number;
   theaterCount: number;
   movieCount: number;
+  skippedTheaters?: number | undefined;
   error?: string;
 }
 
@@ -87,10 +90,52 @@ function saveShowtimesToDatabase(
 }
 
 /**
+ * タイムアウト付き Promise ラッパー
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Timeout: ${label} exceeded ${ms}ms`)), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
+/**
+ * 並列実行ユーティリティ（ワーカープール方式、タスクタイムアウト付き）
+ */
+async function runConcurrent<T>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<void>,
+  taskTimeoutMs = 600_000, // 10分
+): Promise<void> {
+  const queue = [...items];
+  const workers = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    async () => {
+      while (queue.length > 0) {
+        const item = queue.shift()!;
+        try {
+          await withTimeout(fn(item), taskTimeoutMs, 'task');
+        } catch (error) {
+          // タイムアウトでもワーカーは次のタスクに進む（エラーは fn 内で処理済み）
+          if (error instanceof Error && error.message.startsWith('Timeout:')) {
+            console.error(`[WARN] ${error.message}`);
+          }
+        }
+      }
+    },
+  );
+  await Promise.all(workers);
+}
+
+/**
  * メインのスクレイピング実行関数
  */
 export async function runScraper(options: ScrapeOptions): Promise<ScrapeResult[]> {
-  const { areas, dates, dryRun, logger, scraperConfig } = options;
+  const { areas, dates, dryRun, logger, scraperConfig, concurrency = 3 } = options;
   const results: ScrapeResult[] = [];
 
   let db: Database | null = null;
@@ -102,74 +147,102 @@ export async function runScraper(options: ScrapeOptions): Promise<ScrapeResult[]
       logger.info('データベースに接続しました');
     }
 
-    // スクレイパーを作成
+    // スクレイパーを作成・ブラウザを事前初期化
     const scraper = createScraper(scraperConfig);
 
     try {
-      for (const area of areas) {
-        for (const date of dates) {
-          const dateStr = date.toISOString().split('T')[0]!;
-          logger.info({ area, date: dateStr }, 'スクレイピング開始');
+      await scraper.launch();
 
-          try {
-            // スクレイピング実行
-            const showtimes = await scraper.scrapeArea(area, date);
-            logger.info(
-              { area, date: dateStr, count: showtimes.length },
-              'スクレイピング完了'
-            );
-
-            let theaterCount = 0;
-            let movieCount = 0;
-
-            // DBに保存（dry-runでない場合）
-            if (!dryRun && db) {
-              const saveResult = saveShowtimesToDatabase(db, showtimes, logger);
-              theaterCount = saveResult.theaterCount;
-              movieCount = saveResult.movieCount;
-
-              // ログを記録
-              addScrapeLog(db, {
-                area,
-                showtimeCount: showtimes.length,
-              });
-
-              // 定期的に保存
-              saveDatabase(db);
-              logger.info({ area, date: dateStr }, 'データベースに保存しました');
-            }
-
-            results.push({
-              area,
-              date: dateStr,
-              showtimeCount: showtimes.length,
-              theaterCount,
-              movieCount,
-            });
-          } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error({ area, date: dateStr, error: errorMessage }, 'スクレイピングエラー');
-
-            // エラーログをDBに記録
-            if (!dryRun && db) {
-              addScrapeLog(db, {
-                area,
-                error: errorMessage,
-              });
-              saveDatabase(db);
-            }
-
-            results.push({
-              area,
-              date: dateStr,
-              showtimeCount: 0,
-              theaterCount: 0,
-              movieCount: 0,
-              error: errorMessage,
-            });
-          }
+      // (area, date) タスクリストを構築
+      // 日付優先でインターリーブ: 同エリアの異日付が同時実行されないようにする
+      // これにより同じ映画館URLへの同時アクセスを防ぎ、Playwright のナビゲーション競合を回避
+      const tasks: { area: string; date: Date; dateStr: string }[] = [];
+      for (const date of dates) {
+        for (const area of areas) {
+          const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+          tasks.push({ area, date, dateStr });
         }
       }
+
+      logger.info({ taskCount: tasks.length, concurrency }, '並列スクレイピング開始');
+
+      // 並列実行
+      await runConcurrent(tasks, concurrency, async (task) => {
+        const { area, date, dateStr } = task;
+        logger.info({ area, date: dateStr }, 'スクレイピング開始');
+
+        try {
+          // 既存データがある映画館をスキップセットとして構築
+          let skipTheaters: Set<string> | undefined;
+          if (!dryRun && db) {
+            const existingTheaters = getScrapedTheaterNames(db, area, dateStr);
+            if (existingTheaters.length > 0) {
+              skipTheaters = new Set(existingTheaters);
+              logger.info(
+                { area, date: dateStr, skipCount: existingTheaters.length },
+                '既存データのある映画館をスキップ'
+              );
+            }
+          }
+
+          // スクレイピング実行
+          const showtimes = await scraper.scrapeArea(area, date, skipTheaters);
+          logger.info(
+            { area, date: dateStr, count: showtimes.length },
+            'スクレイピング完了'
+          );
+
+          let theaterCount = 0;
+          let movieCount = 0;
+
+          // DBに保存（dry-runでない場合）
+          if (!dryRun && db) {
+            const saveResult = saveShowtimesToDatabase(db, showtimes, logger);
+            theaterCount = saveResult.theaterCount;
+            movieCount = saveResult.movieCount;
+
+            // ログを記録
+            addScrapeLog(db, {
+              area,
+              showtimeCount: showtimes.length,
+            });
+
+            // 定期的に保存
+            saveDatabase(db);
+            logger.info({ area, date: dateStr }, 'データベースに保存しました');
+          }
+
+          results.push({
+            area,
+            date: dateStr,
+            showtimeCount: showtimes.length,
+            theaterCount,
+            movieCount,
+            skippedTheaters: skipTheaters?.size,
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          logger.error({ area, date: dateStr, error: errorMessage }, 'スクレイピングエラー');
+
+          // エラーログをDBに記録
+          if (!dryRun && db) {
+            addScrapeLog(db, {
+              area,
+              error: errorMessage,
+            });
+            saveDatabase(db);
+          }
+
+          results.push({
+            area,
+            date: dateStr,
+            showtimeCount: 0,
+            theaterCount: 0,
+            movieCount: 0,
+            error: errorMessage,
+          });
+        }
+      });
     } finally {
       await scraper.close();
     }

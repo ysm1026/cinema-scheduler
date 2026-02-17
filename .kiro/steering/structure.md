@@ -7,15 +7,20 @@
 ## Package Patterns
 
 ### MCP Server (`packages/mcp/`)
-**Purpose**: Claude Desktop向けMCPサーバー
-**Pattern**: ツールごとにファイル分離、サービス層で複雑なロジックを実装
+**Purpose**: Claude Desktop向けMCPサーバー + Cloud Run HTTP サーバー（計画中）
+**Pattern**: ツールごとにファイル分離、`tools/index.ts`で一括登録（`registerTools`パターン）、サービス層で複雑なロジックを実装。デュアルエントリーポイント（stdio / HTTP）でトランスポートのみ分離。
 ```
 src/
-├── server.ts              # MCPサーバーエントリーポイント
-├── tools/                 # MCPツール定義
+├── server.ts              # MCPサーバーエントリーポイント（stdioトランスポート）
+├── handler.ts             # [計画中] Cloud Run用HTTPエントリーポイント（Express + StreamableHTTPServerTransport）
+├── auth.ts                # [計画中] APIキー認証ミドルウェア
+├── rate-limit.ts          # [計画中] IPベースレート制限ミドルウェア
+├── tools/                 # MCPツール定義（トランスポート非依存）
+│   ├── index.ts           # registerTools() - 全ツール一括登録
 │   ├── list-movies.ts
 │   ├── list-theaters.ts
 │   ├── get-showtimes.ts
+│   ├── get-data-status.ts # データ状態確認
 │   └── optimize-schedule.ts
 └── services/              # ビジネスロジック
     ├── optimizer-service.ts
@@ -35,16 +40,18 @@ src/
 │   ├── parser.ts          # HTML解析
 │   └── areas.ts           # エリア設定読み込み
 └── repository/            # DB操作
+    ├── index.ts           # リポジトリ一括エクスポート
     ├── theater.ts
     ├── movie.ts
-    └── showtime.ts
+    ├── showtime.ts
+    └── scrape-log.ts      # スクレイピングログ記録
 config/
 └── areas.yaml             # スクレイピング対象エリア設定
 ```
 
 ### Shared (`packages/shared/`)
 **Purpose**: パッケージ間共有コード
-**Pattern**: 型定義・DB接続・マイグレーションを集約
+**Pattern**: 型定義・DB接続・マイグレーションを集約。DB接続は環境に応じて自動切り替え（ローカルファイル / GCS）。
 ```
 src/
 ├── types/                 # 共通型定義
@@ -52,9 +59,10 @@ src/
 │   ├── movie.ts
 │   └── showtime.ts
 └── db/                    # データベース
-    ├── connection.ts      # sql.js接続管理
+    ├── connection.ts      # sql.js接続管理（openDatabase/saveDatabase/reloadDatabaseSync/createAutoReloadProxy）
+    ├── gcs-storage.ts     # [計画中] GCS読み書き抽象化
     ├── schema.ts          # テーブル定義
-    └── migrations/        # マイグレーション
+    └── migrations/        # マイグレーション（連番ファイル: 001_initial, 002_add_audio_type...）
 ```
 
 ### Cron (`packages/cron/`)
@@ -74,12 +82,18 @@ config/
 
 ### Inspector (`packages/inspector/`)
 **Purpose**: MCPサーバーデバッグ用WebUI
-**Pattern**: Honoベースの軽量Webサーバー
+**Pattern**: Honoベースの軽量Webサーバー、MCPクライアント経由でツールを対話的にテスト
 ```
 src/
-├── app.ts                 # Honoアプリケーション
-├── views/                 # HTMLテンプレート
-└── routes/                # ルート定義
+├── server.ts              # Honoサーバーエントリーポイント + ルート定義
+├── mcp-client.ts          # MCPサーバーへのstdioクライアント接続
+├── services/
+│   └── history-service.ts # ツール実行履歴管理
+└── views/                 # HTMLテンプレート（SSR）
+    ├── layout.ts
+    ├── home.ts
+    ├── tool.ts
+    └── history.ts
 ```
 
 ## Data Structures
@@ -105,7 +119,8 @@ interface Showtime {
   date: string;        // YYYY-MM-DD
   startTime: string;   // HH:mm
   endTime: string;     // HH:mm
-  format: string | null;
+  format: ShowtimeFormat;
+  audioType: AudioType;  // 'subtitled' | 'dubbed' | null
 }
 ```
 
@@ -130,12 +145,24 @@ import { openDatabase } from '@cinema-scheduler/shared';
 import { matchTitle } from '../services/title-matcher.js';
 ```
 
+### Infrastructure (`infra/`) — 計画中
+**Purpose**: GCPインフラのTerraform定義
+**Pattern**: フラット構成（リソース数が少ないためモジュール分割しない）
+```
+infra/
+├── main.tf                # Cloud Run Service/Job, GCS, Scheduler, AR, SM
+├── variables.tf           # パラメータ定義
+├── outputs.tf             # 出力値
+└── terraform.tfvars       # 環境固有値
+```
+
 ## Code Organization Principles
 
 - MCPツールは1ファイル1ツール（登録関数をエクスポート）
 - 複雑なロジックは`services/`に分離
 - 型定義は`shared`パッケージに集約
 - 設定ファイルはYAML形式で`config/`に配置
+- エントリーポイントはトランスポートのみ担当し、ツール登録ロジック（`registerTools`）を共有
 
 ---
 _Document patterns, not file trees. New files following patterns shouldn't require updates_

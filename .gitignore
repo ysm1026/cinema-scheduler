@@ -29,3 +29,25 @@ npm-debug.log*
 # Playwright
 playwright-report/
 test-results/
+
+# Turbo
+.turbo/
+
+# Terraform
+infra/.terraform/
+infra/terraform.tfstate
+infra/terraform.tfstate.*.backup
+infra/.terraform.lock.hcl
+
+# Credentials / secrets
+**/service-account.json
+
+# Screenshots / temp
+*.png
+*.tar.gz
+
+# Conversation logs
+conversation_log/
+
+# Data
+*.db

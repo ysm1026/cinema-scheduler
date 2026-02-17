@@ -22,28 +22,26 @@ const logger = pino({
 });
 
 /**
- * 今日の日付をYYYY-MM-DD形式で取得（日本時間）
+ * 今日の日付をYYYY-MM-DD形式で取得（ローカルタイムゾーン）
  */
 function getTodayDate(): string {
   const now = new Date();
-  // 日本時間（UTC+9）に変換
-  const jstOffset = 9 * 60; // 分単位
-  const jstDate = new Date(now.getTime() + jstOffset * 60 * 1000);
-  return jstDate.toISOString().split('T')[0]!;
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /**
  * Google Sheets APIクライアントを取得
  */
 async function getSheetsClient(keyFilePath: string): Promise<sheets_v4.Sheets> {
-  // 相対パスの場合は絶対パスに変換
-  const absolutePath = path.isAbsolute(keyFilePath) ? keyFilePath : path.resolve(process.cwd(), keyFilePath);
-
-  if (!fs.existsSync(absolutePath)) {
-    throw new Error(`サービスアカウントキーファイルが見つかりません: ${absolutePath}`);
+  // loadConfig()がconfigディレクトリ基準で解決済みの絶対パスを返す
+  if (!fs.existsSync(keyFilePath)) {
+    throw new Error(`サービスアカウントキーファイルが見つかりません: ${keyFilePath}`);
   }
 
-  const keyJson = fs.readFileSync(absolutePath, 'utf-8');
+  const keyJson = fs.readFileSync(keyFilePath, 'utf-8');
   const credentials = JSON.parse(keyJson);
 
   const auth = new google.auth.GoogleAuth({
@@ -220,7 +218,8 @@ export async function runExportJob(options: ExportJobOptions = {}): Promise<void
 
     logger.info({ date, count: showtimes.length }, 'エクスポートジョブ完了');
   } catch (error) {
-    logger.error({ error }, 'エクスポートジョブ失敗');
+    const err = error instanceof Error ? error : new Error(String(error));
+    logger.error({ err }, 'エクスポートジョブ失敗');
     throw error;
   }
 }

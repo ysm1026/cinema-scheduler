@@ -1,0 +1,58 @@
+# Stage 1: Build
+FROM node:20-bookworm AS builder
+
+RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
+
+WORKDIR /app
+
+# 依存関係のインストール
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json ./
+COPY packages/shared/package.json packages/shared/
+COPY packages/scraper/package.json packages/scraper/
+COPY packages/cron/package.json packages/cron/
+
+RUN pnpm install --frozen-lockfile
+
+# ソースコピー＆ビルド
+COPY packages/shared/ packages/shared/
+COPY packages/scraper/ packages/scraper/
+COPY packages/cron/ packages/cron/
+COPY tsconfig.base.json ./
+
+RUN pnpm --filter @cinema-scheduler/shared run build && \
+    pnpm --filter @cinema-scheduler/scraper run build && \
+    pnpm --filter @cinema-scheduler/cron run build
+
+# 本番依存のみ再インストール
+RUN pnpm install --frozen-lockfile --prod
+
+# Stage 2: Runtime
+FROM node:20-bookworm-slim
+
+# Playwright Chromium の依存パッケージ
+# PLAYWRIGHT_BROWSERS_PATH を固定し、root でインストール後 node ユーザーからも参照可能にする
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
+RUN apt-get update && \
+    npx playwright install --with-deps chromium && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder /app/packages/shared/package.json ./packages/shared/
+COPY --from=builder /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=builder /app/packages/scraper/dist ./packages/scraper/dist
+COPY --from=builder /app/packages/scraper/package.json ./packages/scraper/
+COPY --from=builder /app/packages/scraper/node_modules ./packages/scraper/node_modules
+COPY --from=builder /app/packages/cron/dist ./packages/cron/dist
+COPY --from=builder /app/packages/cron/package.json ./packages/cron/
+COPY --from=builder /app/packages/cron/node_modules ./packages/cron/node_modules
+COPY --from=builder /app/package.json ./
+
+ENV NODE_ENV=production
+
+USER node
+
+CMD ["node", "packages/cron/dist/jobs/scrape-cloud.js"]

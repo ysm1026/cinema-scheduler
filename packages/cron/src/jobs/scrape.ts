@@ -62,7 +62,8 @@ export async function runScrapeJob(options: ScrapeJobOptions = {}): Promise<void
       logger.warn({ errorCount }, 'エラーが発生したエリアがあります');
     }
   } catch (error) {
-    logger.error({ error }, 'スクレイピングジョブ失敗');
+    const err = error instanceof Error ? error : new Error(String(error));
+    logger.error({ err }, 'スクレイピングジョブ失敗');
     throw error;
   }
 }

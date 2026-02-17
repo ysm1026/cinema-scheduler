@@ -6,6 +6,7 @@ import {
   detectPremiumFormat,
   detectAudioType,
   formatDateYYYYMMDD,
+  formatDateISO,
   calculateEndTime,
 } from './parser.js';
 
@@ -147,7 +148,7 @@ export class EigacomScraper {
     targetDate: Date
   ): Promise<ScrapedShowtime[]> {
     const dateStr = formatDateYYYYMMDD(targetDate);
-    const dateISO = targetDate.toISOString().split('T')[0]!;
+    const dateISO = formatDateISO(targetDate);
 
     try {
       await page.goto(theaterUrl, {
@@ -350,9 +351,17 @@ export class EigacomScraper {
   }
 
   /**
-   * 指定エリア・日付の上映スケジュールをスクレイピングする
+   * ブラウザを事前初期化する（並列呼び出し前に呼ぶ）
    */
-  async scrapeArea(area: string, date: Date): Promise<ScrapedShowtime[]> {
+  async launch(): Promise<void> {
+    await this.ensureBrowser();
+  }
+
+  /**
+   * 指定エリア・日付の上映スケジュールをスクレイピングする
+   * @param skipTheaters スキップする映画館名のセット（既存データがある映画館）
+   */
+  async scrapeArea(area: string, date: Date, skipTheaters?: Set<string>): Promise<ScrapedShowtime[]> {
     const ctx = await this.ensureBrowser();
     const page = await ctx.newPage();
 
@@ -366,9 +375,18 @@ export class EigacomScraper {
 
       const allShowtimes: ScrapedShowtime[] = [];
 
+      let skippedCount = 0;
       for (let i = 0; i < theaters.length; i++) {
         const theater = theaters[i];
         if (!theater) continue;
+
+        if (skipTheaters?.has(theater.name)) {
+          skippedCount++;
+          console.log(
+            `[SKIP] [${i + 1}/${theaters.length}] ${theater.name} — 既存データあり`
+          );
+          continue;
+        }
 
         console.log(
           `[INFO] [${i + 1}/${theaters.length}] ${theater.name} をスクレイピング中...`
@@ -390,6 +408,12 @@ export class EigacomScraper {
         }
       }
 
+      if (skippedCount > 0) {
+        console.log(
+          `[INFO] ${area}: ${skippedCount}/${theaters.length} 件の映画館をスキップ`
+        );
+      }
+
       return allShowtimes;
     } finally {
       await page.close();
@@ -407,8 +431,8 @@ export class EigacomScraper {
 
     for (const area of areas) {
       for (const date of dates) {
-        const dateStr = date.toISOString().split('T')[0];
-        console.log(`[INFO] ${area} / ${dateStr} をスクレイピング中...`);
+        const dateLabel = formatDateISO(date);
+        console.log(`[INFO] ${area} / ${dateLabel} をスクレイピング中...`);
 
         const showtimes = await this.scrapeArea(area, date);
         allShowtimes.push(...showtimes);

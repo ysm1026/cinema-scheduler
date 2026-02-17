@@ -1,14 +1,13 @@
 /**
  * Cinema Scheduler Cron Jobs
  *
- * 設定ファイル: config/cron.yaml
+ * setIntervalベースのスケジューラ。
+ * macOSのスリープ/ウェイクサイクルでもジョブを見逃さない。
+ * 毎分チェックし、指定時刻を過ぎていて当日未実行ならジョブを実行する。
  *
- * 定期実行スケジュール:
- *   - スクレイピング: 毎日 06:00（デフォルト）
- *   - スプレッドシートエクスポート: 毎日 07:00（デフォルト）
+ * 設定ファイル: config/cron.yaml
  */
 
-import cron from 'node-cron';
 import { pino } from 'pino';
 import { runScrapeJob } from './jobs/scrape.js';
 import { runExportJob } from './jobs/export-sheets.js';
@@ -21,6 +20,36 @@ const logger = pino({
     options: { colorize: true },
   },
 });
+
+/** YYYY-MM-DD形式のローカル日付を取得 */
+function getLocalDate(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/** cron式 "M H * * *" からHH:MMを抽出 */
+function parseScheduleTime(cronExpr: string): { hour: number; minute: number } | null {
+  const parts = cronExpr.trim().split(/\s+/);
+  if (parts.length < 2) return null;
+  const minute = parseInt(parts[0]!, 10);
+  const hour = parseInt(parts[1]!, 10);
+  if (isNaN(minute) || isNaN(hour)) return null;
+  return { hour, minute };
+}
+
+/** 現在のローカル時刻がHH:MMを過ぎているか */
+function isPastTime(hour: number, minute: number): boolean {
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const targetMinutes = hour * 60 + minute;
+  return currentMinutes >= targetMinutes;
+}
+
+// ジョブの最終実行日（日付文字列）を記録
+const lastRunDates: Record<string, string> = {};
 
 /**
  * スクレイピングジョブのラッパー
@@ -39,7 +68,8 @@ async function scrapeJobWrapper(): Promise<void> {
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     logger.info({ duration: `${duration}s` }, '=== スクレイピングジョブ完了 ===');
   } catch (error) {
-    logger.error({ error }, '=== スクレイピングジョブ失敗 ===');
+    const err = error instanceof Error ? error : new Error(String(error));
+    logger.error({ err }, '=== スクレイピングジョブ失敗 ===');
   }
 }
 
@@ -56,45 +86,85 @@ async function exportJobWrapper(): Promise<void> {
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     logger.info({ duration: `${duration}s` }, '=== エクスポートジョブ完了 ===');
   } catch (error) {
-    logger.error({ error }, '=== エクスポートジョブ失敗 ===');
+    const err = error instanceof Error ? error : new Error(String(error));
+    logger.error({ err }, '=== エクスポートジョブ失敗 ===');
   }
 }
 
 /**
- * cronスケジューラを開始
+ * ジョブをチェックして必要なら実行する
+ */
+async function checkAndRunJob(
+  jobName: string,
+  cronExpr: string,
+  jobFn: () => Promise<void>
+): Promise<void> {
+  const schedule = parseScheduleTime(cronExpr);
+  if (!schedule) return;
+
+  const today = getLocalDate();
+
+  // 既に今日実行済みならスキップ
+  if (lastRunDates[jobName] === today) return;
+
+  // 指定時刻を過ぎていなければスキップ
+  if (!isPastTime(schedule.hour, schedule.minute)) return;
+
+  // 実行
+  lastRunDates[jobName] = today;
+  logger.info({ jobName, date: today, schedule: cronExpr }, 'ジョブ実行開始');
+  await jobFn();
+}
+
+/** 現在実行中のチェックループか */
+let isChecking = false;
+
+/**
+ * 定期チェック（毎分）
+ */
+async function tick(): Promise<void> {
+  // 再入防止（前回のジョブがまだ実行中の場合）
+  if (isChecking) return;
+  isChecking = true;
+
+  try {
+    const config = loadConfig();
+
+    // スクレイピングジョブ
+    await checkAndRunJob('scrape', config.schedule.scrape, scrapeJobWrapper);
+
+    // エクスポートジョブ
+    if (isGoogleSheetsConfigured(config)) {
+      await checkAndRunJob('export', config.schedule.export, exportJobWrapper);
+    }
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    logger.error({ err }, 'スケジューラチェックエラー');
+  } finally {
+    isChecking = false;
+  }
+}
+
+/**
+ * スケジューラを開始
  */
 function startScheduler(): void {
   const config = loadConfig();
 
   logger.info({ configFile: 'config/cron.yaml' }, '設定ファイルを読み込みました');
+  logger.info({ scrape: config.schedule.scrape, export: config.schedule.export }, 'スケジュール設定');
 
-  // スクレイピングジョブをスケジュール
-  const scrapeCron = config.schedule.scrape;
-  if (cron.validate(scrapeCron)) {
-    cron.schedule(scrapeCron, scrapeJobWrapper, {
-      timezone: 'Asia/Tokyo',
-    });
-    logger.info({ schedule: scrapeCron }, 'スクレイピングジョブをスケジュール');
-  } else {
-    logger.error({ schedule: scrapeCron }, '無効なcron式です');
-  }
-
-  // エクスポートジョブをスケジュール（設定が有効な場合のみ）
-  if (isGoogleSheetsConfigured(config)) {
-    const exportCron = config.schedule.export;
-    if (cron.validate(exportCron)) {
-      cron.schedule(exportCron, exportJobWrapper, {
-        timezone: 'Asia/Tokyo',
-      });
-      logger.info({ schedule: exportCron }, 'エクスポートジョブをスケジュール');
-    } else {
-      logger.error({ schedule: exportCron }, '無効なcron式です');
-    }
-  } else {
+  if (!isGoogleSheetsConfigured(config)) {
     logger.info('Googleスプレッドシート連携が未設定のため、エクスポートジョブはスキップ');
   }
 
-  logger.info('Cronスケジューラを開始しました。Ctrl+Cで終了します。');
+  // 毎分チェック
+  setInterval(tick, 60 * 1000);
+
+  // 起動直後にもチェック（スリープ復帰やプロセス再起動時の見逃し対策）
+  tick();
+
+  logger.info('スケジューラを開始しました（60秒間隔チェック）。Ctrl+Cで終了します。');
 }
 
 /**

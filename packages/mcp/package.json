@@ -17,12 +17,14 @@
   },
   "dependencies": {
     "@cinema-scheduler/shared": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.4.1",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.2.1",
     "sql.js": "^1.12.0",
-    "yaml": "^2.8.2",
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^22.13.4",
     "@types/sql.js": "^1.4.9",
     "tsx": "^4.19.2",

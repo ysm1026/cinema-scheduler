@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { SCHEMA_SQL } from './schema.js';
 import { runMigrations } from './migrations/index.js';
+import { createGcsStorage, type GcsStorageService } from './gcs-storage.js';
 
 const DB_DIR = join(homedir(), '.cinema-scheduler');
 const DB_PATH = join(DB_DIR, 'data.db');
@@ -78,6 +79,21 @@ export function saveDatabase(db: Database): void {
 }
 
 /**
+ * データベースをファイルから再読み込みする（同期版）
+ * sql.jsが初期化済みであることが前提
+ */
+export function reloadDatabaseSync(): Database {
+  if (!SQL) {
+    throw new Error('sql.js is not initialized. Call openDatabase() first.');
+  }
+  if (!existsSync(DB_PATH)) {
+    throw new Error(`Database file not found: ${DB_PATH}`);
+  }
+  const buffer = readFileSync(DB_PATH);
+  return new SQL.Database(buffer);
+}
+
+/**
  * データベースを閉じる
  */
 export function closeDatabase(db: Database): void {
@@ -96,4 +112,106 @@ export function getDatabasePath(): string {
  */
 export function getDatabaseDir(): string {
   return DB_DIR;
+}
+
+// --- GCS 対応 ---
+
+export interface GcsCacheInfo {
+  generation: string | null;
+  lastChecked: Date | null;
+  lastUpdated: Date | null;
+}
+
+export interface GcsReloadHandle {
+  db: Database;
+  getCacheInfo: () => GcsCacheInfo;
+  stop: () => void;
+}
+
+/**
+ * GCS から data.db をダウンロードしてメモリ上に開く
+ */
+export async function openDatabaseFromGcs(
+  bucket: string,
+  objectName = 'data.db',
+  gcsStorage?: GcsStorageService,
+): Promise<Database> {
+  const sql = await initSQL();
+  if (!sql) {
+    throw new Error('Failed to initialize sql.js');
+  }
+
+  const gcs = gcsStorage ?? createGcsStorage();
+  const buffer = await gcs.download(bucket, objectName);
+  return new sql.Database(buffer);
+}
+
+/**
+ * GCS メタデータを定期チェックし、generation 変化時に DB を自動更新する Proxy を作成する
+ */
+export function createGcsAutoReloadProxy(
+  initialDb: Database,
+  options: {
+    gcsBucket: string;
+    gcsObjectName?: string;
+    checkIntervalMs?: number;
+    gcsStorage?: GcsStorageService;
+  },
+): GcsReloadHandle {
+  const {
+    gcsBucket,
+    gcsObjectName = 'data.db',
+    checkIntervalMs = 300_000,
+    gcsStorage,
+  } = options;
+  const gcs = gcsStorage ?? createGcsStorage();
+
+  let currentDb = initialDb;
+  let currentGeneration: string | null = null;
+  let lastChecked: Date | null = null;
+  let lastUpdated: Date | null = null;
+
+  const proxy = new Proxy(initialDb, {
+    get(_target, prop) {
+      const value = Reflect.get(currentDb, prop);
+      if (typeof value === 'function') {
+        return value.bind(currentDb);
+      }
+      return value;
+    },
+  });
+
+  async function checkForUpdates(): Promise<void> {
+    try {
+      const metadata = await gcs.getMetadata(gcsBucket, gcsObjectName);
+      lastChecked = new Date();
+
+      if (currentGeneration !== null && metadata.generation !== currentGeneration) {
+        const buffer = await gcs.download(gcsBucket, gcsObjectName);
+        if (!SQL) throw new Error('sql.js not initialized');
+        const oldDb = currentDb;
+        currentDb = new SQL.Database(buffer);
+        currentGeneration = metadata.generation;
+        lastUpdated = metadata.updated;
+        try { oldDb.close(); } catch { /* ignore */ }
+        console.log(`DB refreshed from GCS (generation: ${currentGeneration})`);
+      } else {
+        currentGeneration = metadata.generation;
+        lastUpdated = metadata.updated;
+      }
+    } catch (error) {
+      console.error('GCS cache check failed:', error);
+    }
+  }
+
+  // 初回メタデータ取得（非同期、バックグラウンド実行）
+  checkForUpdates();
+
+  const intervalId = setInterval(checkForUpdates, checkIntervalMs);
+
+  return {
+    db: proxy,
+    getCacheInfo: () => ({ generation: currentGeneration, lastChecked, lastUpdated }),
+    stop: () => clearInterval(intervalId),
+  };
 }

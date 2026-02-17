@@ -1,0 +1,11 @@
+project_id         = "your-gcp-project-id"
+region             = "asia-northeast1"
+billing_account_id = ""
+
+mcp_image     = "asia-northeast1-docker.pkg.dev/your-project/cinema-scheduler/mcp:latest"
+scraper_image = "asia-northeast1-docker.pkg.dev/your-project/cinema-scheduler/scraper:latest"
+
+mcp_max_instances = 3
+budget_amount     = 1000
+
+github_repo = "your-org/cinema-scheduler"

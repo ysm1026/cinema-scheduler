@@ -1,55 +1,37 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import { fileURLToPath } from 'url';
-import * as yaml from 'yaml';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-interface AreaConfig {
-  aliases?: Record<string, string>;
-  [area: string]: string | Record<string, string> | undefined;
-}
-
-let areaAliases: Map<string, string> | null = null;
-
 /**
- * エリアエイリアスを読み込む
+ * エリアエイリアス定義（areas.yaml と同期）
+ * Docker 環境では scraper パッケージが存在しないため、ここに埋め込む
  */
-function loadAreaAliases(): Map<string, string> {
-  if (areaAliases !== null) {
-    return areaAliases;
-  }
+const AREA_ALIASES: Record<string, string> = {
+  日比谷: '有楽町',
+  丸の内: '有楽町',
+  '銀座・有楽町': '有楽町',
+  東京駅: '日本橋',
+  秋葉原: '上野',
+  原宿: '渋谷',
+  表参道: '渋谷',
+  青山: '渋谷',
+  新大久保: '新宿',
+  歌舞伎町: '新宿',
+  代官山: '恵比寿',
+  中目黒: '恵比寿',
+  自由が丘: '二子玉川',
+  三軒茶屋: '下北沢',
+  巣鴨: '大塚',
+  浅草: '上野',
+  押上: '錦糸町',
+  スカイツリー: '錦糸町',
+  東京ドーム: '水道橋',
+  後楽園: '水道橋',
+};
 
-  areaAliases = new Map();
-
-  try {
-    // scraper パッケージの config を参照
-    const configPath = path.resolve(__dirname, '../../../scraper/dist/config/areas.yaml');
-
-    if (fs.existsSync(configPath)) {
-      const content = fs.readFileSync(configPath, 'utf-8');
-      const config = yaml.parse(content) as AreaConfig;
-
-      if (config.aliases && typeof config.aliases === 'object') {
-        for (const [alias, target] of Object.entries(config.aliases)) {
-          areaAliases.set(alias, target);
-        }
-      }
-    }
-  } catch (error) {
-    console.error('Failed to load area aliases:', error);
-  }
-
-  return areaAliases;
-}
+const areaAliases = new Map<string, string>(Object.entries(AREA_ALIASES));
 
 /**
  * エリア名を解決する（エイリアスがあれば実際のエリア名に変換）
  */
 export function resolveAreaName(area: string): string {
-  const aliases = loadAreaAliases();
-  return aliases.get(area) ?? area;
+  return areaAliases.get(area) ?? area;
 }
 
 /**
@@ -61,9 +43,3 @@ export function resolveAreaNames(areas: string[]): string[] {
   return [...new Set(resolved)];
 }
 
-/**
- * エイリアスのキャッシュをクリア（テスト用）
- */
-export function clearAliasCache(): void {
-  areaAliases = null;
-}

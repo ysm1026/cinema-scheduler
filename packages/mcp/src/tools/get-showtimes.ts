@@ -67,11 +67,14 @@ interface GetShowtimesResponse {
 }
 
 /**
- * 今日の日付をYYYY-MM-DD形式で取得
+ * 今日の日付をYYYY-MM-DD形式で取得（ローカルタイムゾーン）
  */
 function getTodayDate(): string {
   const now = new Date();
-  return now.toISOString().split('T')[0]!;
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /**

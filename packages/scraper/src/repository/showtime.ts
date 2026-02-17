@@ -82,6 +82,29 @@ export function upsertShowtime(db: Database, showtime: ShowtimeInput): number {
 }
 
 /**
+ * 指定エリア・日付で既にデータがある映画館名の一覧を取得
+ * スクレイピング時の重複スキップ判定に使用
+ */
+export function getScrapedTheaterNames(db: Database, area: string, date: string): string[] {
+  const stmt = db.prepare(`
+    SELECT DISTINCT t.name
+    FROM theaters t
+    JOIN showtimes s ON s.theater_id = t.id
+    WHERE t.area = ? AND s.date = ?
+  `);
+  stmt.bind([area, date]);
+
+  const names: string[] = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject() as { name: string };
+    names.push(row.name);
+  }
+  stmt.free();
+
+  return names;
+}
+
+/**
  * 指定日・エリアの上映情報を取得
  */
 export function getShowtimesByDateAndArea(

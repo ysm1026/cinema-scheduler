@@ -1,0 +1,14 @@
+node_modules
+dist
+.turbo
+.git
+.github
+.kiro
+.claude
+docs
+conversation_log
+*.png
+*.pen
+*.md
+!pnpm-lock.yaml
+!pnpm-workspace.yaml

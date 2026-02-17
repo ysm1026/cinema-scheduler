@@ -42,6 +42,16 @@ export function validateAreas(areas: string[]): { valid: string[]; invalid: stri
 }
 
 /**
+ * ローカル日付をYYYY-MM-DD形式でフォーマットする
+ */
+function formatLocalDateISO(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * 日付範囲を生成する
  */
 export function generateDateRange(days: number): string[] {
@@ -51,7 +61,7 @@ export function generateDateRange(days: number): string[] {
   for (let i = 0; i < days; i++) {
     const date = new Date(today);
     date.setDate(today.getDate() + i);
-    dates.push(date.toISOString().split('T')[0]!);
+    dates.push(formatLocalDateISO(date));
   }
 
   return dates;

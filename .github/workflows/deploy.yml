@@ -1,0 +1,77 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+
+env:
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  REGION: asia-northeast1
+  AR_REPO: cinema-scheduler
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy-mcp:
+    name: Deploy MCP Server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and push image
+        run: |
+          IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/mcp:${{ github.sha }}
+          docker build -f Dockerfile.mcp -t $IMAGE .
+          docker push $IMAGE
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v3
+        with:
+          service: cinema-mcp
+          region: ${{ env.REGION }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/mcp:${{ github.sha }}
+
+  deploy-scraper:
+    name: Deploy Scraper Job
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and push image
+        run: |
+          IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/scraper:${{ github.sha }}
+          docker build -f Dockerfile.scraper -t $IMAGE .
+          docker push $IMAGE
+
+      - name: Deploy to Cloud Run Job
+        uses: google-github-actions/deploy-cloudrun@v3
+        with:
+          job: cinema-scraper
+          region: ${{ env.REGION }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/scraper:${{ github.sha }}

@@ -45,6 +45,9 @@ const DEFAULT_CONFIG: CronConfig = {
   },
 };
 
+/** 設定ファイルのディレクトリ（相対パス解決の基準） */
+const CONFIG_DIR = path.resolve(__dirname, '../config');
+
 let cachedConfig: CronConfig | null = null;
 
 /**
@@ -56,7 +59,7 @@ export function loadConfig(configPath?: string): CronConfig {
   }
 
   // 設定ファイルのパスを解決
-  const defaultConfigPath = path.resolve(__dirname, '../config/cron.yaml');
+  const defaultConfigPath = path.resolve(CONFIG_DIR, 'cron.yaml');
   const resolvedPath = configPath ?? process.env.CRON_CONFIG_PATH ?? defaultConfigPath;
 
   try {
@@ -79,6 +82,15 @@ export function loadConfig(configPath?: string): CronConfig {
           ...parsed.schedule,
         },
       };
+
+      // keyFilePathが相対パスの場合、cronパッケージのルート基準で解決する
+      if (cachedConfig.googleSheets.keyFilePath && !path.isAbsolute(cachedConfig.googleSheets.keyFilePath)) {
+        const packageRoot = path.resolve(__dirname, '..');
+        cachedConfig.googleSheets.keyFilePath = path.resolve(
+          packageRoot,
+          cachedConfig.googleSheets.keyFilePath
+        );
+      }
     } else {
       console.warn(`設定ファイルが見つかりません: ${resolvedPath}`);
       console.warn('デフォルト設定を使用します');

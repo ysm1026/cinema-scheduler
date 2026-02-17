@@ -16,9 +16,19 @@
 - **エリア横断検索**: 複数の映画館エリア（新宿・池袋・渋谷等）を跨いだ最適ルートの計画
 - **時間制約対応**: 限られた時間帯内での最大限の映画体験
 
+## Deployment Modes
+
+| Mode | Transport | DB Source | Target Users |
+|------|-----------|-----------|-------------|
+| ローカル（現行） | stdio | `~/.cinema-scheduler/data.db` | 開発者（Claude Desktop） |
+| Cloud Run（計画中） | HTTP (Express + StreamableHTTPServerTransport) | GCS → sql.js インメモリ | パブリック MCP クライアント |
+
+詳細は `.kiro/specs/cloud-run-deploy/` を参照。
+
 ## Value Proposition
 
 - **MCP統合**: Claude Desktopのネイティブツールとして動作
+- **パブリック公開（計画中）**: Cloud Run 経由で任意の MCP クライアントからアクセス可能
 - **動的データ取得**: JavaScriptで生成される映画館サイトに対応
 - **複数候補提案**: 単一解ではなく複数のスケジュール候補を提示
 - **曖昧検索**: ユーザーの入力揺れを吸収（「ランニングマン」→「ランニング・マン」）
@@ -48,6 +58,16 @@ MCPツールは以下のプレミアム上映形式を検出・サポートし�
 | `TCX` | TOHOシネマズ大型スクリーン | TCX, TOHO CINEMAS eXtra |
 
 **注記**: 上映形式がない場合は `null` が返されます（通常上映）。
+
+## Audio Types
+
+MCPツールは音声タイプ（字幕/吹替）を検出します：
+
+| Type | Description |
+|------|-------------|
+| `subtitled` | 字幕版 |
+| `dubbed` | 吹替版 |
+| `null` | 不明または通常（表記なし） |
 
 ---
 _Focus on patterns and purpose, not exhaustive feature lists_
