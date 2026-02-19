@@ -1,5 +1,5 @@
 {
-  "version": "2.6",
+  "version": "2.7",
   "children": [
     {
       "type": "frame",
@@ -294,16 +294,6 @@
                   "fontFamily": "Inter",
                   "fontSize": 12,
                   "fontWeight": "600"
-                },
-                {
-                  "type": "text",
-                  "id": "GYeJ4",
-                  "name": "scraperSub",
-                  "fill": "#fed7aa",
-                  "content": "eiga.com",
-                  "fontFamily": "Inter",
-                  "fontSize": 9,
-                  "fontWeight": "normal"
                 }
               ]
             }

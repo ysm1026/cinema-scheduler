@@ -1,7 +1,7 @@
 /**
  * 上映形式（プレミアムフォーマット）
  */
-export type ShowtimeFormat = 'IMAX' | 'DOLBY_CINEMA' | 'DOLBY_ATMOS' | '4DX' | 'SCREENX' | 'GOOON' | 'TCX' | null;
+export type ShowtimeFormat = 'IMAX' | 'IMAX_LASER' | 'DOLBY_CINEMA' | 'DOLBY_ATMOS' | '4DX' | 'SCREENX' | 'GOOON' | 'TCX' | null;
 
 /**
  * 音声タイプ（字幕/吹替）

@@ -5,7 +5,7 @@
 
 import { pino } from 'pino';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { runScraper, validateAreas, generateDateRange, DEFAULT_CONFIG } from '@cinema-scheduler/scraper';
+import { runScraper, runChainScrapers, validateAreas, generateDateRange, DEFAULT_CONFIG } from '@cinema-scheduler/scraper';
 import { getDatabasePath, getDatabaseDir, createGcsStorage, openDatabase, closeDatabase } from '@cinema-scheduler/shared';
 
 const logger = pino({
@@ -85,7 +85,28 @@ async function main(): Promise<void> {
   const totalSkipped = results.reduce((sum, r) => sum + (r.skippedTheaters ?? 0), 0);
   const errorCount = results.filter((r) => r.error).length;
 
-  logger.info({ totalShowtimes, totalSkipped, errorCount }, 'スクレイピング完了');
+  logger.info({ totalShowtimes, totalSkipped, errorCount }, 'eiga.comスクレイピング完了');
+
+  // チェーンスクレイパー実行（cinema_sunshine, toho）
+  logger.info('チェーンスクレイパーを開始');
+  const chainResults = await runChainScrapers({
+    dryRun: false,
+    logger,
+  });
+
+  const chainShowtimes = chainResults.reduce((sum, r) => sum + r.showtimeCount, 0);
+  const chainErrors = chainResults.filter((r) => r.error).length;
+  logger.info({
+    totalShowtimes: chainShowtimes,
+    successCount: chainResults.length - chainErrors,
+    errorCount: chainErrors,
+  }, 'チェーンスクレイピング完了');
+
+  logger.info({
+    eigacom: totalShowtimes,
+    chain: chainShowtimes,
+    total: totalShowtimes + chainShowtimes,
+  }, '全スクレイピング完了');
 
   // データ完全性チェック（GCS アップロード前）
   logger.info('データ完全性チェック開始');

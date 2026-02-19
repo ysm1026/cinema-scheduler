@@ -3,7 +3,7 @@
  */
 
 import { pino } from 'pino';
-import { runScraper, validateAreas, generateDateRange, DEFAULT_CONFIG } from '@cinema-scheduler/scraper';
+import { runScraper, runChainScrapers, validateAreas, generateDateRange, DEFAULT_CONFIG } from '@cinema-scheduler/scraper';
 
 const logger = pino({
   level: process.env.LOG_LEVEL ?? 'info',
@@ -48,7 +48,7 @@ export async function runScrapeJob(options: ScrapeJobOptions = {}): Promise<void
       logger,
     });
 
-    // サマリー
+    // eiga.com サマリー
     const totalShowtimes = results.reduce((sum, r) => sum + r.showtimeCount, 0);
     const errorCount = results.filter((r) => r.error).length;
 
@@ -56,11 +56,33 @@ export async function runScrapeJob(options: ScrapeJobOptions = {}): Promise<void
       totalShowtimes,
       successCount: results.length - errorCount,
       errorCount,
-    }, 'スクレイピングジョブ完了');
+    }, 'eiga.comスクレイピング完了');
 
     if (errorCount > 0) {
       logger.warn({ errorCount }, 'エラーが発生したエリアがあります');
     }
+
+    // チェーンスクレイパー実行（cinema_sunshine, toho）
+    logger.info('チェーンスクレイパーを開始');
+    const chainResults = await runChainScrapers({
+      dryRun: false,
+      logger,
+    });
+
+    const chainShowtimes = chainResults.reduce((sum, r) => sum + r.showtimeCount, 0);
+    const chainErrors = chainResults.filter((r) => r.error).length;
+    logger.info({
+      totalShowtimes: chainShowtimes,
+      successCount: chainResults.length - chainErrors,
+      errorCount: chainErrors,
+    }, 'チェーンスクレイピング完了');
+
+    // 全体サマリー
+    logger.info({
+      eigacom: totalShowtimes,
+      chain: chainShowtimes,
+      total: totalShowtimes + chainShowtimes,
+    }, 'スクレイピングジョブ完了');
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
     logger.error({ err }, 'スクレイピングジョブ失敗');

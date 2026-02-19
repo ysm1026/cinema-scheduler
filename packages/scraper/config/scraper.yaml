@@ -1,0 +1,23 @@
+# スクレイパー設定ファイル
+# チェーンごとのスクレイピング期間やオプションを定義
+
+chains:
+  # 映画.com（eiga.com）
+  eigacom:
+    scrape_days: 3          # 何日先までスクレイピングするか
+    enabled: true
+
+  # シネマサンシャイン
+  cinema_sunshine:
+    scrape_days: 4
+    enabled: true
+
+  # TOHOシネマズ
+  toho:
+    scrape_days: 4
+    enabled: true
+
+# デフォルト設定（個別指定がない場合に適用）
+defaults:
+  scrape_days: 3
+  enabled: true

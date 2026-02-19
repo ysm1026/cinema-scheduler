@@ -1,7 +1,7 @@
 /**
  * 映画館のチェーン種別
  */
-export type TheaterChain = 'toho' | 'aeon' | 'united' | 'other';
+export type TheaterChain = 'toho' | 'cinema_sunshine' | 'aeon' | 'united' | 'other';
 
 /**
  * 映画館情報

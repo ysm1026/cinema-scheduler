@@ -1,5 +1,5 @@
 // @cinema-scheduler/scraper
-// eiga.com scraper batch
+// eiga.com scraper batch + chain scrapers
 
 import type { Logger } from 'pino';
 import type { Database } from 'sql.js';
@@ -10,6 +10,9 @@ import { upsertMovie } from './repository/movie.js';
 import { upsertShowtime } from './repository/showtime.js';
 import { getScrapedTheaterNames } from './repository/showtime.js';
 import { addScrapeLog } from './repository/scrape-log.js';
+import { createChainScraper, getRegisteredChains } from './scraper/chains/registry.js';
+import { getScrapeDates } from './scraper/chains/config-loader.js';
+import type { ChainShowtime } from './scraper/chains/types.js';
 
 /**
  * スクレイピング実行オプション
@@ -245,6 +248,219 @@ export async function runScraper(options: ScrapeOptions): Promise<ScrapeResult[]
       });
     } finally {
       await scraper.close();
+    }
+
+    // 最終保存
+    if (!dryRun && db) {
+      saveDatabase(db);
+    }
+  } finally {
+    if (db) {
+      closeDatabase(db);
+    }
+  }
+
+  return results;
+}
+
+/**
+ * チェーンスクレイピング結果
+ */
+export interface ChainScrapeResult {
+  chain: string;
+  date: string;
+  showtimeCount: number;
+  theaterCount: number;
+  movieCount: number;
+  error?: string;
+}
+
+/**
+ * チェーンスクレイピングオプション
+ */
+export interface ChainScrapeOptions {
+  dryRun: boolean;
+  logger: Logger;
+}
+
+/**
+ * ChainShowtime の時刻を "HH:MM" 文字列に変換
+ */
+function formatTime(date: Date): string {
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+/**
+ * Date を "YYYY-MM-DD" 文字列に変換
+ */
+function formatDateStr(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * チェーンスクレイピング結果をDBに保存する
+ */
+function saveChainShowtimesToDatabase(
+  db: Database,
+  showtimes: ChainShowtime[],
+  chain: string,
+  dateStr: string,
+  logger: Logger
+): { theaterCount: number; movieCount: number } {
+  const theaterIds = new Map<string, number>();
+  const movieIds = new Map<string, number>();
+
+  for (const showtime of showtimes) {
+    // 映画館のUPSERT（チェーン名をareaとして使用）
+    let theaterId = theaterIds.get(showtime.theater);
+    if (!theaterId) {
+      theaterId = upsertTheater(db, {
+        name: showtime.theater,
+        area: chain,
+        chain: showtime.theaterChain,
+      });
+      theaterIds.set(showtime.theater, theaterId);
+      logger.debug({ theater: showtime.theater }, '映画館を保存');
+    }
+
+    // 映画のUPSERT
+    let movieId = movieIds.get(showtime.movieTitle);
+    if (!movieId) {
+      movieId = upsertMovie(db, {
+        title: showtime.movieTitle,
+      });
+      movieIds.set(showtime.movieTitle, movieId);
+      logger.debug({ movie: showtime.movieTitle }, '映画を保存');
+    }
+
+    // 上映情報のUPSERT
+    upsertShowtime(db, {
+      theaterId,
+      movieId,
+      date: dateStr,
+      startTime: formatTime(showtime.startTime),
+      endTime: formatTime(showtime.endTime),
+      ...(showtime.format && { format: showtime.format }),
+    });
+  }
+
+  return {
+    theaterCount: theaterIds.size,
+    movieCount: movieIds.size,
+  };
+}
+
+/**
+ * チェーンスクレイパーを実行（cinema_sunshine, toho）
+ * 各チェーンの全映画館を順次スクレイピングし、DBに保存する。
+ */
+export async function runChainScrapers(options: ChainScrapeOptions): Promise<ChainScrapeResult[]> {
+  const { dryRun, logger } = options;
+  const results: ChainScrapeResult[] = [];
+
+  let db: Database | null = null;
+
+  try {
+    if (!dryRun) {
+      db = await openDatabase();
+      logger.info('チェーンスクレイパー: データベースに接続しました');
+    }
+
+    const chains = getRegisteredChains();
+    logger.info({ chains }, 'チェーンスクレイパー開始');
+
+    for (const chain of chains) {
+      const scraper = await createChainScraper(chain);
+      if (!scraper) {
+        logger.info({ chain }, 'チェーンが無効またはスクレイパー未登録、スキップ');
+        continue;
+      }
+
+      try {
+        const dates = getScrapeDates(chain);
+        logger.info({ chain, dateCount: dates.length }, 'スクレイピング日数');
+
+        for (const date of dates) {
+          const dateStr = formatDateStr(date);
+
+          try {
+            logger.info({ chain, date: dateStr }, 'チェーンスクレイピング開始');
+
+            const result = await scraper.scrapeSchedule({
+              movieTitles: [], // 空配列 = 全映画取得
+              date,
+            });
+
+            if (!result.ok) {
+              logger.error({ chain, date: dateStr, error: result.error }, 'チェーンスクレイプエラー');
+              results.push({
+                chain,
+                date: dateStr,
+                showtimeCount: 0,
+                theaterCount: 0,
+                movieCount: 0,
+                error: result.error.type,
+              });
+              continue;
+            }
+
+            const showtimes = result.value;
+            logger.info({ chain, date: dateStr, count: showtimes.length }, 'チェーンスクレイピング完了');
+
+            let theaterCount = 0;
+            let movieCount = 0;
+
+            if (!dryRun && db) {
+              const saveResult = saveChainShowtimesToDatabase(db, showtimes, chain, dateStr, logger);
+              theaterCount = saveResult.theaterCount;
+              movieCount = saveResult.movieCount;
+
+              addScrapeLog(db, {
+                area: `chain:${chain}`,
+                showtimeCount: showtimes.length,
+              });
+
+              saveDatabase(db);
+              logger.info({ chain, date: dateStr, theaterCount, movieCount }, 'チェーンデータをDBに保存');
+            }
+
+            results.push({
+              chain,
+              date: dateStr,
+              showtimeCount: showtimes.length,
+              theaterCount,
+              movieCount,
+            });
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            logger.error({ chain, date: dateStr, error: errorMessage }, 'チェーンスクレイピングエラー');
+
+            if (!dryRun && db) {
+              addScrapeLog(db, {
+                area: `chain:${chain}`,
+                error: errorMessage,
+              });
+              saveDatabase(db);
+            }
+
+            results.push({
+              chain,
+              date: dateStr,
+              showtimeCount: 0,
+              theaterCount: 0,
+              movieCount: 0,
+              error: errorMessage,
+            });
+          }
+        }
+      } finally {
+        await scraper.close();
+      }
     }
 
     // 最終保存

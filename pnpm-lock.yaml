@@ -8,12 +8,21 @@ importers:
 
   .:
     devDependencies:
+      playwright:
+        specifier: ^1.50.1
+        version: 1.58.0
+      tsx:
+        specifier: ^4.19.2
+        version: 4.21.0
       turbo:
         specifier: ^2.4.0
         version: 2.8.0
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
+      yaml:
+        specifier: ^2.8.2
+        version: 2.8.2
 
   packages/cron:
     dependencies:
