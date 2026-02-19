@@ -58,6 +58,38 @@ export const tohoChainScraper: ChainScraper = {
         timeout: 10000,
       }).catch(() => {});
 
+      // TOHOサイトはSPAのため showDay パラメータが無視される場合がある。
+      // 対象日付のタブをクリックして正しいスケジュールを表示する。
+      const targetMonth = targetDate.getMonth() + 1;
+      const targetDay = targetDate.getDate();
+      const targetLabel = `${targetMonth}/${targetDay}`;
+      const tabClicked = await page.evaluate((label: string) => {
+        let result = 'not_found';
+        const tabs = document.querySelectorAll('.schedule-tab-item');
+        tabs.forEach((tab) => {
+          if (result !== 'not_found') return;
+          const text = tab.textContent ?? '';
+          if (text.includes(label)) {
+            if (tab.classList.contains('is-selected')) {
+              result = 'already_selected';
+              return;
+            }
+            const clickTarget = (tab.querySelector('.schedule-tab-dates') ?? tab) as HTMLElement;
+            clickTarget.click();
+            result = 'clicked';
+          }
+        });
+        return result;
+      }, targetLabel);
+
+      if (tabClicked === 'clicked') {
+        // タブクリック後、スケジュールの再描画を待つ
+        await page.waitForTimeout(2000);
+        await page.waitForSelector('.schedule-body-section-item', {
+          timeout: 10000,
+        }).catch(() => {});
+      }
+
       reportProgress(onProgress, {
         stage: 'extracting',
         current: 0,
