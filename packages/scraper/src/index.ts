@@ -389,11 +389,25 @@ export async function runChainScrapers(options: ChainScrapeOptions): Promise<Cha
           const dateStr = formatDateStr(date);
 
           try {
+            // 既存データがある映画館をスキップセットとして構築
+            let skipTheaterNames: Set<string> | undefined;
+            if (!dryRun && db) {
+              const existingTheaters = getScrapedTheaterNames(db, chain, dateStr);
+              if (existingTheaters.length > 0) {
+                skipTheaterNames = new Set(existingTheaters);
+                logger.info(
+                  { chain, date: dateStr, skipCount: existingTheaters.length },
+                  '既存データのある映画館をスキップ'
+                );
+              }
+            }
+
             logger.info({ chain, date: dateStr }, 'チェーンスクレイピング開始');
 
             const result = await scraper.scrapeSchedule({
               movieTitles: [], // 空配列 = 全映画取得
               date,
+              skipTheaterNames,
             });
 
             if (!result.ok) {

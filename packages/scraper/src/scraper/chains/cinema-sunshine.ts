@@ -218,7 +218,7 @@ export async function createCinemaSunshineScraper(): Promise<TheaterScraper> {
       options: ScrapeOptions,
       onProgress?: OnProgressCallback
     ): Promise<Result<ChainShowtime[], ScrapeError>> {
-      const { movieTitles, date, theaterNames } = options;
+      const { movieTitles, date, theaterNames, skipTheaterNames } = options;
 
       reportProgress(onProgress, {
         stage: 'initializing',
@@ -239,11 +239,22 @@ export async function createCinemaSunshineScraper(): Promise<TheaterScraper> {
           targetTheaters = theaters;
         }
 
+        if (skipTheaterNames && skipTheaterNames.size > 0) {
+          const before = targetTheaters.length;
+          targetTheaters = targetTheaters.filter((t) => !skipTheaterNames.has(t.name));
+          const skipped = before - targetTheaters.length;
+          if (skipped > 0) {
+            reportProgress(onProgress, {
+              stage: 'initializing',
+              current: 0,
+              total: 1,
+              message: `既存データのある ${skipped} 映画館をスキップ`,
+            });
+          }
+        }
+
         if (targetTheaters.length === 0) {
-          return err({
-            type: 'no_theaters_found',
-            message: 'シネマサンシャインの対象映画館が見つかりませんでした',
-          });
+          return ok([]);
         }
 
         const allShowtimes: ChainShowtime[] = [];

@@ -41,6 +41,7 @@ export interface ScrapeOptions {
   movieTitles: string[];
   date: Date;
   theaterNames?: string[] | undefined;
+  skipTheaterNames?: Set<string> | undefined;
 }
 
 /**
