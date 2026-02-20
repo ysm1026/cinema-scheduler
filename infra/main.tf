@@ -155,6 +155,7 @@ resource "google_cloud_run_v2_service" "mcp" {
           cpu    = var.mcp_cpu
           memory = var.mcp_memory
         }
+        cpu_idle = true
       }
 
       env {
