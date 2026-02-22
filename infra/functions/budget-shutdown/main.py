@@ -1,7 +1,7 @@
 """Budget exceeded auto-shutdown Cloud Function.
 
 Triggered by Pub/Sub message from GCP billing budget notification.
-When cost >= budget, disables Cloud Run service and pauses Cloud Scheduler job.
+When cost >= budget, stops the GCE instance.
 """
 
 import base64
@@ -9,13 +9,11 @@ import json
 import os
 
 import functions_framework
-from google.cloud import run_v2
-from google.cloud import scheduler_v1
+from google.cloud import compute_v1
 
-PROJECT_ID = os.environ["GCP_PROJECT_ID"]
-REGION = os.environ["GCP_REGION"]
-CLOUD_RUN_SERVICE = os.environ["CLOUD_RUN_SERVICE"]
-SCHEDULER_JOB = os.environ["SCHEDULER_JOB"]
+GCP_PROJECT_ID = os.environ["GCP_PROJECT_ID"]
+GCE_ZONE = os.environ["GCE_ZONE"]
+GCE_INSTANCE = os.environ["GCE_INSTANCE"]
 
 
 @functions_framework.cloud_event
@@ -35,39 +33,25 @@ def handle_budget_notification(cloud_event):
 
     print(f"BUDGET EXCEEDED: cost={cost_amount} >= budget={budget_amount}")
 
-    _disable_cloud_run_service()
-    _pause_scheduler_job()
+    _stop_instance()
 
     print("Shutdown complete.")
 
 
-def _disable_cloud_run_service():
-    """Block external traffic by switching ingress to internal-only."""
-    client = run_v2.ServicesClient()
-    service_name = f"projects/{PROJECT_ID}/locations/{REGION}/services/{CLOUD_RUN_SERVICE}"
+def _stop_instance():
+    """Stop the GCE instance."""
+    client = compute_v1.InstancesClient()
 
-    service = client.get_service(name=service_name)
+    instance = client.get(
+        project=GCP_PROJECT_ID, zone=GCE_ZONE, instance=GCE_INSTANCE
+    )
 
-    if service.ingress == run_v2.types.IngressTraffic.INGRESS_TRAFFIC_INTERNAL_ONLY:
-        print(f"Service '{CLOUD_RUN_SERVICE}' already set to internal-only.")
+    if instance.status in ("TERMINATED", "STOPPED"):
+        print(f"Instance '{GCE_INSTANCE}' is already stopped.")
         return
 
-    service.ingress = run_v2.types.IngressTraffic.INGRESS_TRAFFIC_INTERNAL_ONLY
-
-    operation = client.update_service(
-        request=run_v2.UpdateServiceRequest(service=service)
+    operation = client.stop(
+        project=GCP_PROJECT_ID, zone=GCE_ZONE, instance=GCE_INSTANCE
     )
     operation.result(timeout=120)
-    print(f"Service '{CLOUD_RUN_SERVICE}' ingress set to INTERNAL_ONLY.")
-
-
-def _pause_scheduler_job():
-    """Pause the Cloud Scheduler job to stop the scraper."""
-    client = scheduler_v1.CloudSchedulerClient()
-    job_name = f"projects/{PROJECT_ID}/locations/{REGION}/jobs/{SCHEDULER_JOB}"
-
-    try:
-        client.pause_job(name=job_name)
-        print(f"Scheduler job '{SCHEDULER_JOB}' paused.")
-    except Exception as e:
-        print(f"Warning: Could not pause scheduler job: {e}")
+    print(f"Instance '{GCE_INSTANCE}' stopped.")

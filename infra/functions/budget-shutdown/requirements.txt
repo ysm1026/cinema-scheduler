@@ -1,3 +1,2 @@
 functions-framework==3.*
-google-cloud-run==0.*
-google-cloud-scheduler==2.*
+google-cloud-compute==1.*

@@ -1,4 +1,4 @@
-name: Deploy to Cloud Run
+name: Deploy to GCE
 
 on:
   push:
@@ -6,19 +6,45 @@ on:
 
 env:
   PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-  REGION: asia-northeast1
-  AR_REPO: cinema-scheduler
+  VM_ZONE: us-central1-a
+  VM_NAME: cinema-scheduler
+  GCS_BUCKET: cinema-scheduler-${{ vars.GCP_PROJECT_ID }}
 
 permissions:
   contents: read
   id-token: write
 
 jobs:
-  deploy-mcp:
-    name: Deploy MCP Server
+  deploy:
+    name: Build and Deploy to GCE
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install and build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Create deployment artifact
+        run: |
+          tar -czf deploy.tar.gz \
+            packages/shared/dist \
+            packages/mcp/dist \
+            packages/scraper/dist \
+            packages/cron/dist \
+            packages/scraper/config \
+            packages/cron/config \
+            infra/scripts
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
@@ -29,49 +55,13 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v3
 
-      - name: Configure Docker
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+      - name: Upload artifact to GCS
+        run: gsutil cp deploy.tar.gz gs://${{ env.GCS_BUCKET }}/deploy.tar.gz
 
-      - name: Build and push image
+      - name: Deploy to VM
         run: |
-          IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/mcp:${{ github.sha }}
-          docker build -f Dockerfile.mcp -t $IMAGE .
-          docker push $IMAGE
-
-      - name: Deploy to Cloud Run
-        uses: google-github-actions/deploy-cloudrun@v3
-        with:
-          service: cinema-mcp
-          region: ${{ env.REGION }}
-          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/mcp:${{ github.sha }}
-
-  deploy-scraper:
-    name: Deploy Scraper Job
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v3
-        with:
-          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
-          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v3
-
-      - name: Configure Docker
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
-
-      - name: Build and push image
-        run: |
-          IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/scraper:${{ github.sha }}
-          docker build -f Dockerfile.scraper -t $IMAGE .
-          docker push $IMAGE
-
-      - name: Deploy to Cloud Run Job
-        uses: google-github-actions/deploy-cloudrun@v3
-        with:
-          job: cinema-scraper
-          region: ${{ env.REGION }}
-          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/scraper:${{ github.sha }}
+          gcloud compute ssh ${{ env.VM_NAME }} \
+            --zone=${{ env.VM_ZONE }} \
+            --project=${{ env.PROJECT_ID }} \
+            --tunnel-through-iap \
+            --command="sudo -u cinema-scheduler bash /opt/cinema-scheduler/infra/scripts/deploy.sh"

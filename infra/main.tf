@@ -26,9 +26,7 @@ data "google_project" "current" {}
 # --- APIs ---
 resource "google_project_service" "apis" {
   for_each = toset([
-    "run.googleapis.com",
-    "artifactregistry.googleapis.com",
-    "cloudscheduler.googleapis.com",
+    "compute.googleapis.com",
     "secretmanager.googleapis.com",
     "cloudbilling.googleapis.com",
     "billingbudgets.googleapis.com",
@@ -41,14 +39,6 @@ resource "google_project_service" "apis" {
   ])
   service            = each.key
   disable_on_destroy = false
-}
-
-# --- Artifact Registry ---
-resource "google_artifact_registry_repository" "main" {
-  location      = var.region
-  repository_id = "cinema-scheduler"
-  format        = "DOCKER"
-  depends_on    = [google_project_service.apis]
 }
 
 # --- GCS Bucket ---
@@ -81,181 +71,83 @@ resource "google_secret_manager_secret" "api_keys" {
   depends_on = [google_project_service.apis]
 }
 
-# --- Service Accounts ---
-resource "google_service_account" "mcp" {
-  account_id   = "cinema-mcp"
-  display_name = "Cinema Scheduler MCP Service"
+# --- Service Account (VM) ---
+resource "google_service_account" "vm" {
+  account_id   = "cinema-scheduler-vm"
+  display_name = "Cinema Scheduler VM"
 }
 
-resource "google_service_account" "scraper" {
-  account_id   = "cinema-scraper"
-  display_name = "Cinema Scheduler Scraper Job"
-}
-
-resource "google_service_account" "scheduler" {
-  account_id   = "cinema-scheduler-trigger"
-  display_name = "Cinema Scheduler Cloud Scheduler Trigger"
-}
-
-# --- IAM: MCP service account ---
-resource "google_storage_bucket_iam_member" "mcp_gcs_reader" {
-  bucket = google_storage_bucket.data.name
-  role   = "roles/storage.objectViewer"
-  member = "serviceAccount:${google_service_account.mcp.email}"
-}
-
-resource "google_secret_manager_secret_iam_member" "mcp_secret_accessor" {
-  secret_id = google_secret_manager_secret.api_keys.id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.mcp.email}"
-}
-
-# --- IAM: Scraper service account ---
-resource "google_storage_bucket_iam_member" "scraper_gcs_writer" {
+# VM SA → GCS read/write
+resource "google_storage_bucket_iam_member" "vm_gcs_admin" {
   bucket = google_storage_bucket.data.name
   role   = "roles/storage.objectAdmin"
-  member = "serviceAccount:${google_service_account.scraper.email}"
+  member = "serviceAccount:${google_service_account.vm.email}"
 }
 
-# --- IAM: Scheduler → Cloud Run Job invoker ---
-resource "google_cloud_run_v2_job_iam_member" "scheduler_invoker" {
-  name     = google_cloud_run_v2_job.scraper.name
-  location = var.region
-  role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.scheduler.email}"
+# VM SA → Secret Manager
+resource "google_secret_manager_secret_iam_member" "vm_secret_accessor" {
+  secret_id = google_secret_manager_secret.api_keys.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.vm.email}"
 }
 
-# --- Cloud Run Service (MCP) ---
-resource "google_cloud_run_v2_service" "mcp" {
-  name                = "cinema-mcp"
-  location            = var.region
-  deletion_protection = true
-  ingress             = "INGRESS_TRAFFIC_ALL"
+# --- GCE Instance (e2-micro, free tier) ---
+resource "google_compute_address" "main" {
+  name   = "cinema-scheduler-ip"
+  region = "us-central1"
+}
 
-  template {
-    service_account = google_service_account.mcp.email
+resource "google_compute_instance" "main" {
+  name         = "cinema-scheduler"
+  machine_type = "e2-micro"
+  zone         = var.vm_zone
 
-    scaling {
-      min_instance_count = 0
-      max_instance_count = var.mcp_max_instances
-    }
-
-    max_instance_request_concurrency = 80
-    timeout                          = "30s"
-
-    containers {
-      image = var.mcp_image
-
-      ports {
-        container_port = 8080
-      }
-
-      resources {
-        limits = {
-          cpu    = var.mcp_cpu
-          memory = var.mcp_memory
-        }
-        cpu_idle = true
-      }
-
-      env {
-        name  = "CLOUD_STORAGE_BUCKET"
-        value = google_storage_bucket.data.name
-      }
-
-      startup_probe {
-        http_get {
-          path = "/health"
-          port = 8080
-        }
-        initial_delay_seconds = 2
-        period_seconds        = 3
-        failure_threshold     = 10
-      }
+  boot_disk {
+    initialize_params {
+      image = "debian-cloud/debian-12"
+      size  = 30
+      type  = "pd-standard"
     }
   }
+
+  network_interface {
+    network = "default"
+    access_config {
+      nat_ip = google_compute_address.main.address
+    }
+  }
+
+  service_account {
+    email  = google_service_account.vm.email
+    scopes = ["cloud-platform"]
+  }
+
+  metadata = {
+    gcs-bucket          = google_storage_bucket.data.name
+    scrape-days         = tostring(var.scrape_days)
+    scrape-areas        = var.scrape_areas
+    scrape-concurrency  = tostring(var.scrape_concurrency)
+  }
+
+  metadata_startup_script = file("${path.module}/scripts/startup.sh")
+
+  tags = ["cinema-scheduler", "http-server"]
 
   depends_on = [google_project_service.apis]
 }
 
-# パブリックアクセス許可（API キーで認証するため allUsers を許可）
-resource "google_cloud_run_v2_service_iam_member" "mcp_public" {
-  name     = google_cloud_run_v2_service.mcp.name
-  location = var.region
-  role     = "roles/run.invoker"
-  member   = "allUsers"
-}
+# --- Firewall ---
+resource "google_compute_firewall" "allow_http" {
+  name    = "cinema-scheduler-allow-http"
+  network = "default"
 
-# --- Cloud Run Job (Scraper) ---
-resource "google_cloud_run_v2_job" "scraper" {
-  name                = "cinema-scraper"
-  location            = var.region
-  deletion_protection = false
-
-  template {
-    task_count = 1
-
-    template {
-      service_account = google_service_account.scraper.email
-      max_retries     = var.scraper_max_retries
-      timeout         = "86400s"
-
-      containers {
-        image = var.scraper_image
-
-        resources {
-          limits = {
-            cpu    = var.scraper_cpu
-            memory = var.scraper_memory
-          }
-        }
-
-        env {
-          name  = "CLOUD_STORAGE_BUCKET"
-          value = google_storage_bucket.data.name
-        }
-
-        env {
-          name  = "SCRAPE_DAYS"
-          value = tostring(var.scrape_days)
-        }
-
-        dynamic "env" {
-          for_each = var.scrape_areas != "" ? [var.scrape_areas] : []
-          content {
-            name  = "SCRAPE_AREAS"
-            value = env.value
-          }
-        }
-
-        env {
-          name  = "SCRAPE_CONCURRENCY"
-          value = tostring(var.scrape_concurrency)
-        }
-      }
-    }
+  allow {
+    protocol = "tcp"
+    ports    = ["8080"]
   }
 
-  depends_on = [google_project_service.apis]
-}
-
-# --- Cloud Scheduler ---
-resource "google_cloud_scheduler_job" "scraper_trigger" {
-  name      = "cinema-scraper-daily"
-  schedule  = var.scrape_schedule
-  time_zone = "Asia/Tokyo"
-  region    = var.region
-
-  http_target {
-    http_method = "POST"
-    uri         = "https://${var.region}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${var.project_id}/jobs/${google_cloud_run_v2_job.scraper.name}:run"
-
-    oauth_token {
-      service_account_email = google_service_account.scheduler.email
-    }
-  }
-
-  depends_on = [google_project_service.apis]
+  source_ranges = ["0.0.0.0/0"]
+  target_tags   = ["http-server"]
 }
 
 # --- Budget Alert ---
@@ -310,21 +202,9 @@ resource "google_service_account" "budget_shutdown" {
   display_name = "Budget Shutdown Cloud Function"
 }
 
-resource "google_project_iam_member" "budget_shutdown_run_admin" {
+resource "google_project_iam_member" "budget_shutdown_compute_admin" {
   project = var.project_id
-  role    = "roles/run.admin"
-  member  = "serviceAccount:${google_service_account.budget_shutdown.email}"
-}
-
-resource "google_project_iam_member" "budget_shutdown_scheduler_admin" {
-  project = var.project_id
-  role    = "roles/cloudscheduler.admin"
-  member  = "serviceAccount:${google_service_account.budget_shutdown.email}"
-}
-
-resource "google_project_iam_member" "budget_shutdown_sa_user" {
-  project = var.project_id
-  role    = "roles/iam.serviceAccountUser"
+  role    = "roles/compute.instanceAdmin.v1"
   member  = "serviceAccount:${google_service_account.budget_shutdown.email}"
 }
 
@@ -343,7 +223,7 @@ resource "google_storage_bucket_object" "budget_shutdown_source" {
 resource "google_cloudfunctions2_function" "budget_shutdown" {
   name        = "budget-shutdown"
   location    = var.region
-  description = "Shuts down Cloud Run and Scheduler when budget is exceeded"
+  description = "Stops GCE instance when budget is exceeded"
 
   build_config {
     runtime     = "python312"
@@ -367,10 +247,9 @@ resource "google_cloudfunctions2_function" "budget_shutdown" {
     ingress_settings               = "ALLOW_INTERNAL_ONLY"
 
     environment_variables = {
-      GCP_PROJECT_ID    = var.project_id
-      GCP_REGION        = var.region
-      CLOUD_RUN_SERVICE = google_cloud_run_v2_service.mcp.name
-      SCHEDULER_JOB     = google_cloud_scheduler_job.scraper_trigger.name
+      GCP_PROJECT_ID = var.project_id
+      GCE_ZONE       = var.vm_zone
+      GCE_INSTANCE   = google_compute_instance.main.name
     }
   }
 
@@ -421,34 +300,34 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   }
 }
 
-# GitHub Actions SA → Artifact Registry writer
-resource "google_artifact_registry_repository_iam_member" "github_ar_writer" {
-  count      = var.github_repo != "" ? 1 : 0
-  location   = google_artifact_registry_repository.main.location
-  repository = google_artifact_registry_repository.main.name
-  role       = "roles/artifactregistry.writer"
-  member     = "serviceAccount:${google_service_account.github_actions[0].email}"
+# GitHub Actions SA → GCS write (upload deploy.tar.gz)
+resource "google_storage_bucket_iam_member" "github_gcs_writer" {
+  count  = var.github_repo != "" ? 1 : 0
+  bucket = google_storage_bucket.data.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.github_actions[0].email}"
 }
 
-# GitHub Actions SA → Cloud Run admin (deploy service)
-resource "google_project_iam_member" "github_run_admin" {
+# GitHub Actions SA → Compute instance admin (SSH + manage)
+resource "google_project_iam_member" "github_compute_admin" {
   count   = var.github_repo != "" ? 1 : 0
   project = var.project_id
-  role    = "roles/run.admin"
+  role    = "roles/compute.instanceAdmin.v1"
   member  = "serviceAccount:${google_service_account.github_actions[0].email}"
 }
 
-# GitHub Actions SA → act as Cloud Run service accounts
-resource "google_service_account_iam_member" "github_act_as_mcp" {
-  count              = var.github_repo != "" ? 1 : 0
-  service_account_id = google_service_account.mcp.name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${google_service_account.github_actions[0].email}"
+# GitHub Actions SA → IAP tunnel access (for gcloud compute ssh)
+resource "google_project_iam_member" "github_iap_tunnel" {
+  count   = var.github_repo != "" ? 1 : 0
+  project = var.project_id
+  role    = "roles/iap.tunnelResourceAccessor"
+  member  = "serviceAccount:${google_service_account.github_actions[0].email}"
 }
 
-resource "google_service_account_iam_member" "github_act_as_scraper" {
+# GitHub Actions SA → act as VM service account
+resource "google_service_account_iam_member" "github_act_as_vm" {
   count              = var.github_repo != "" ? 1 : 0
-  service_account_id = google_service_account.scraper.name
+  service_account_id = google_service_account.vm.name
   role               = "roles/iam.serviceAccountUser"
   member             = "serviceAccount:${google_service_account.github_actions[0].email}"
 }

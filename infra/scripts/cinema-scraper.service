@@ -1,0 +1,25 @@
+[Unit]
+Description=Cinema Scheduler Scraper Job
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=cinema-scheduler
+Group=cinema-scheduler
+WorkingDirectory=/opt/cinema-scheduler
+
+Environment=NODE_ENV=production
+Environment=CLOUD_STORAGE_BUCKET=${GCS_BUCKET}
+Environment=SCRAPE_DAYS=${SCRAPE_DAYS}
+Environment=SCRAPE_AREAS=${SCRAPE_AREAS}
+Environment=SCRAPE_CONCURRENCY=${SCRAPE_CONCURRENCY}
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
+Environment=LOG_LEVEL=info
+
+ExecStart=/usr/bin/node packages/cron/dist/jobs/scrape-cloud.js
+
+TimeoutStartSec=3600
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cinema-scraper

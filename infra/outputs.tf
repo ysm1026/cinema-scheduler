@@ -1,11 +1,11 @@
-output "mcp_service_url" {
-  description = "Cloud Run MCP service URL"
-  value       = google_cloud_run_v2_service.mcp.uri
+output "vm_external_ip" {
+  description = "GCE instance external IP"
+  value       = google_compute_address.main.address
 }
 
-output "scraper_job_name" {
-  description = "Cloud Run scraper job name"
-  value       = google_cloud_run_v2_job.scraper.name
+output "mcp_url" {
+  description = "MCP HTTP endpoint URL"
+  value       = "http://${google_compute_address.main.address}:8080/mcp"
 }
 
 output "data_bucket_name" {
@@ -13,19 +13,9 @@ output "data_bucket_name" {
   value       = google_storage_bucket.data.name
 }
 
-output "artifact_registry_url" {
-  description = "Artifact Registry repository URL"
-  value       = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.main.repository_id}"
-}
-
-output "mcp_service_account_email" {
-  description = "MCP service account email"
-  value       = google_service_account.mcp.email
-}
-
-output "scraper_service_account_email" {
-  description = "Scraper service account email"
-  value       = google_service_account.scraper.email
+output "vm_service_account_email" {
+  description = "VM service account email"
+  value       = google_service_account.vm.email
 }
 
 output "wif_provider" {

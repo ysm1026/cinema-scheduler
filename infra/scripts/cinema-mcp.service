@@ -1,0 +1,26 @@
+[Unit]
+Description=Cinema Scheduler MCP HTTP Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cinema-scheduler
+Group=cinema-scheduler
+WorkingDirectory=/opt/cinema-scheduler
+
+Environment=NODE_ENV=production
+Environment=PORT=8080
+Environment=CLOUD_STORAGE_BUCKET=${GCS_BUCKET}
+Environment=DB_CACHE_CHECK_INTERVAL=300000
+
+ExecStart=/usr/bin/node packages/mcp/dist/handler.js
+
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cinema-mcp
+
+[Install]
+WantedBy=multi-user.target
