@@ -2,9 +2,13 @@
 # Deploy script - runs on the VM via GitHub Actions SSH
 # Pre-built dist is downloaded from GCS (built on GitHub Actions runner)
 # This VM only runs MCP server; scraping is done locally
+#
+# NOTE: This script must be run as a user with sudo privileges (not cinema-scheduler).
+# The workflow SSH command should NOT use "sudo -u cinema-scheduler".
 set -euo pipefail
 
 APP_DIR="/opt/cinema-scheduler"
+APP_USER="cinema-scheduler"
 cd ${APP_DIR}
 
 echo "=== Deploying cinema-scheduler ==="
@@ -14,17 +18,17 @@ GCS_BUCKET=$(curl -sf "http://metadata.google.internal/computeMetadata/v1/instan
 
 # Pull latest code (for package.json, configs, scripts)
 echo "Pulling latest code..."
-git fetch origin main
-git reset --hard origin/main
+sudo -u ${APP_USER} git fetch origin main
+sudo -u ${APP_USER} git reset --hard origin/main
 
 # Install dependencies (no build - dist comes from GCS)
 echo "Installing dependencies..."
-pnpm install --frozen-lockfile
+sudo -u ${APP_USER} pnpm install --frozen-lockfile
 
 # Download and extract pre-built dist from GCS
 echo "Downloading pre-built artifacts from GCS..."
 gsutil cp "gs://${GCS_BUCKET}/deploy.tar.gz" /tmp/deploy.tar.gz
-tar -xzf /tmp/deploy.tar.gz -C ${APP_DIR}
+sudo -u ${APP_USER} tar -xzf /tmp/deploy.tar.gz -C ${APP_DIR}
 rm /tmp/deploy.tar.gz
 
 # Update systemd unit

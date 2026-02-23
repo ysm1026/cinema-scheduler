@@ -64,4 +64,4 @@ jobs:
             --zone=${{ env.VM_ZONE }} \
             --project=${{ env.PROJECT_ID }} \
             --tunnel-through-iap \
-            --command="sudo -u cinema-scheduler bash /opt/cinema-scheduler/infra/scripts/deploy.sh"
+            --command="sudo bash /opt/cinema-scheduler/infra/scripts/deploy.sh"
