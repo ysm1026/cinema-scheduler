@@ -14,10 +14,7 @@ const logger = pino({
 
 async function main(): Promise<void> {
   const bucket = process.env.CLOUD_STORAGE_BUCKET;
-  if (!bucket) {
-    logger.error('CLOUD_STORAGE_BUCKET environment variable is required');
-    process.exit(1);
-  }
+  const skipGcs = !bucket;
 
   const objectName = process.env.GCS_OBJECT_NAME ?? 'data.db';
 
@@ -41,7 +38,7 @@ async function main(): Promise<void> {
   const dates = dateStrings.map((d) => new Date(d));
 
   // GCS から既存 DB をダウンロード（重複スキップのため）
-  const gcs = createGcsStorage();
+  const gcs = skipGcs ? null : createGcsStorage();
   const dbDir = getDatabaseDir();
   const dbPath = getDatabasePath();
 
@@ -49,12 +46,16 @@ async function main(): Promise<void> {
     mkdirSync(dbDir, { recursive: true });
   }
 
-  try {
-    const buffer = await gcs.download(bucket, objectName);
-    writeFileSync(dbPath, buffer);
-    logger.info({ sizeBytes: buffer.length }, '既存 DB を GCS からダウンロード');
-  } catch {
-    logger.info('GCS に既存 DB なし、新規作成');
+  if (gcs && bucket) {
+    try {
+      const buffer = await gcs.download(bucket, objectName);
+      writeFileSync(dbPath, buffer);
+      logger.info({ sizeBytes: buffer.length }, '既存 DB を GCS からダウンロード');
+    } catch {
+      logger.info('GCS に既存 DB なし、新規作成');
+    }
+  } else {
+    logger.info('GCS スキップ: ローカルモードで実行');
   }
 
   // ベースライン記録（GCS からダウンロードした DB のショータイム数）
@@ -151,11 +152,14 @@ async function main(): Promise<void> {
   }
 
   // data.db を GCS にアップロード
-  const dbBuffer = readFileSync(dbPath);
-
-  logger.info({ bucket, objectName, sizeBytes: dbBuffer.length }, 'GCS アップロード開始');
-  await gcs.upload(bucket, objectName, dbBuffer);
-  logger.info('GCS アップロード完了');
+  if (gcs && bucket) {
+    const dbBuffer = readFileSync(dbPath);
+    logger.info({ bucket, objectName, sizeBytes: dbBuffer.length }, 'GCS アップロード開始');
+    await gcs.upload(bucket, objectName, dbBuffer);
+    logger.info('GCS アップロード完了');
+  } else {
+    logger.info({ dbPath }, 'GCS スキップ: ローカル DB のみ保存');
+  }
 }
 
 main()

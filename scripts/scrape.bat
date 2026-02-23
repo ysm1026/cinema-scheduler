@@ -1,25 +1,22 @@
 @echo off
 REM Cinema Scheduler - Local Scraper + Sheets Export for Windows
-REM 1. Scrapes showtimes and uploads data.db to GCS
+REM 1. Scrapes showtimes to local data.db (GCS upload if CLOUD_STORAGE_BUCKET is set)
 REM 2. Exports today's data to Google Spreadsheet
 REM
 REM Prerequisites:
-REM   1. gcloud CLI installed and authenticated:
-REM      gcloud auth application-default login
-REM   2. Node.js + pnpm installed
-REM   3. Project built: pnpm build
-REM   4. config/service-account.json for Sheets API
+REM   1. Node.js + pnpm installed
+REM   2. Project built: pnpm build
+REM   3. config/service-account.json for Sheets API
+REM   4. (Optional) gcloud CLI + auth for GCS upload
 
 setlocal
 
-set CLOUD_STORAGE_BUCKET=cinema-scheduler-cinema-scheduler-2026
 set SCRAPE_AREAS=新宿,池袋,有楽町,渋谷,日本橋,上野,六本木,品川,銀座
 set SCRAPE_DAYS=3
 set SCRAPE_CONCURRENCY=3
 
 cd /d "%~dp0.."
 echo === Cinema Scheduler Scraper ===
-echo Bucket: %CLOUD_STORAGE_BUCKET%
 echo Areas: %SCRAPE_AREAS%
 echo Days: %SCRAPE_DAYS%
 
