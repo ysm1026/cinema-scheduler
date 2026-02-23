@@ -1,12 +1,14 @@
 @echo off
-REM Cinema Scheduler - Local Scraper for Windows
-REM Runs scrape-cloud.js locally and uploads data.db to GCS
+REM Cinema Scheduler - Local Scraper + Sheets Export for Windows
+REM 1. Scrapes showtimes and uploads data.db to GCS
+REM 2. Exports today's data to Google Spreadsheet
 REM
 REM Prerequisites:
 REM   1. gcloud CLI installed and authenticated:
 REM      gcloud auth application-default login
 REM   2. Node.js + pnpm installed
 REM   3. Project built: pnpm build
+REM   4. config/service-account.json for Sheets API
 
 setlocal
 
@@ -29,3 +31,14 @@ if %ERRORLEVEL% neq 0 (
 )
 
 echo === Scrape complete ===
+echo.
+echo === Exporting to Google Sheets ===
+
+node packages\cron\dist\jobs\export-sheets.js
+
+if %ERRORLEVEL% neq 0 (
+    echo [WARN] Sheets export failed with exit code %ERRORLEVEL%
+    REM Export failure is non-fatal - scraping already succeeded
+)
+
+echo === All done ===
