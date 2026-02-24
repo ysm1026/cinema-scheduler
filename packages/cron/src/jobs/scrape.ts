@@ -91,7 +91,8 @@ export async function runScrapeJob(options: ScrapeJobOptions = {}): Promise<void
 }
 
 // 直接実行された場合
-if (import.meta.url === `file://${process.argv[1]}`) {
+import { pathToFileURL } from 'node:url';
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   runScrapeJob()
     .then(() => process.exit(0))
     .catch(() => process.exit(1));

@@ -225,7 +225,8 @@ export async function runExportJob(options: ExportJobOptions = {}): Promise<void
 }
 
 // 直接実行された場合
-if (import.meta.url === `file://${process.argv[1]}`) {
+import { pathToFileURL } from 'node:url';
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   runExportJob()
     .then(() => process.exit(0))
     .catch(() => process.exit(1));

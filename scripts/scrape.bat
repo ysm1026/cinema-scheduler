@@ -7,17 +7,18 @@ REM Prerequisites:
 REM   1. Node.js + pnpm installed
 REM   2. Project built: pnpm build
 REM   3. config/service-account.json for Sheets API
-REM   4. (Optional) gcloud CLI + auth for GCS upload
+REM   4. gcloud auth application-default login for GCS upload
 
 setlocal
 
-set SCRAPE_AREAS=新宿,池袋,有楽町,渋谷,日本橋,上野,六本木,品川,銀座
+REM SCRAPE_AREAS を未設定にすると全国エリア（areas.yaml の全エリア）を対象とする
 set SCRAPE_DAYS=3
 set SCRAPE_CONCURRENCY=3
+set CLOUD_STORAGE_BUCKET=cinema-scheduler-cinema-scheduler-2026
 
 cd /d "%~dp0.."
 echo === Cinema Scheduler Scraper ===
-echo Areas: %SCRAPE_AREAS%
+echo Areas: All (areas.yaml)
 echo Days: %SCRAPE_DAYS%
 
 node packages\cron\dist\jobs\scrape-cloud.js
