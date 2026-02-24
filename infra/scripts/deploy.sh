@@ -1,5 +1,5 @@
 #!/bin/bash
-# Deploy script - runs on the VM via GitHub Actions SSH
+# Deploy script - runs on the VM as root via GitHub Actions SSH
 # Pre-built dist is downloaded from GCS (built on GitHub Actions runner)
 # This VM only runs MCP server; scraping is done locally
 #
@@ -9,21 +9,20 @@ set -euo pipefail
 
 APP_DIR="/opt/cinema-scheduler"
 APP_USER="cinema-scheduler"
-cd ${APP_DIR}
 
 echo "=== Deploying cinema-scheduler ==="
 
 # Get GCS bucket from instance metadata
 GCS_BUCKET=$(curl -sf "http://metadata.google.internal/computeMetadata/v1/instance/attributes/gcs-bucket" -H "Metadata-Flavor: Google")
 
-# Pull latest code (for package.json, configs, scripts)
+# Pull latest code as app user (for package.json, configs, scripts)
 echo "Pulling latest code..."
-sudo -u ${APP_USER} git fetch origin main
-sudo -u ${APP_USER} git reset --hard origin/main
+sudo -u ${APP_USER} git -C ${APP_DIR} fetch origin main
+sudo -u ${APP_USER} git -C ${APP_DIR} reset --hard origin/main
 
-# Install dependencies (no build - dist comes from GCS)
+# Install dependencies as app user (no build - dist comes from GCS)
 echo "Installing dependencies..."
-sudo -u ${APP_USER} pnpm install --frozen-lockfile
+sudo -u ${APP_USER} bash -c "cd ${APP_DIR} && pnpm install --frozen-lockfile"
 
 # Download and extract pre-built dist from GCS
 echo "Downloading pre-built artifacts from GCS..."
@@ -33,13 +32,13 @@ rm /tmp/deploy.tar.gz
 
 # Update systemd unit
 echo "Updating systemd unit..."
-sudo cp ${APP_DIR}/infra/scripts/cinema-mcp.service /etc/systemd/system/
-sudo sed -i "s|\${GCS_BUCKET}|${GCS_BUCKET}|g" /etc/systemd/system/cinema-mcp.service
+cp ${APP_DIR}/infra/scripts/cinema-mcp.service /etc/systemd/system/
+sed -i "s|\${GCS_BUCKET}|${GCS_BUCKET}|g" /etc/systemd/system/cinema-mcp.service
 
 # Restart MCP service
-sudo systemctl daemon-reload
-sudo systemctl restart cinema-mcp.service
+systemctl daemon-reload
+systemctl restart cinema-mcp.service
 
 echo "=== Deploy complete ==="
 echo "MCP status:"
-sudo systemctl status cinema-mcp.service --no-pager || true
+systemctl status cinema-mcp.service --no-pager || true
