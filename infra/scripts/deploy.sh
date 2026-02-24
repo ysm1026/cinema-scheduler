@@ -10,6 +10,9 @@ set -euo pipefail
 APP_DIR="/opt/cinema-scheduler"
 APP_USER="cinema-scheduler"
 
+# Allow git operations on app directory owned by another user
+git config --global --add safe.directory ${APP_DIR}
+
 echo "=== Deploying cinema-scheduler ==="
 
 # Get GCS bucket from instance metadata

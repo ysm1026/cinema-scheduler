@@ -64,4 +64,4 @@ jobs:
             --zone=${{ env.VM_ZONE }} \
             --project=${{ env.PROJECT_ID }} \
             --tunnel-through-iap \
-            --command="sudo bash /opt/cinema-scheduler/infra/scripts/deploy.sh"
+            --command="git config --global --add safe.directory /opt/cinema-scheduler && sudo bash /opt/cinema-scheduler/infra/scripts/deploy.sh"
