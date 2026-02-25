@@ -54,6 +54,13 @@ variable "notification_email" {
   default     = ""
 }
 
+# MCP Server
+variable "mcp_domain" {
+  description = "Domain name for MCP HTTPS endpoint (e.g., cinema-scheduler.duckdns.org)"
+  type        = string
+  default     = "cinema-scheduler.duckdns.org"
+}
+
 # GitHub Actions (Workload Identity)
 variable "github_repo" {
   description = "GitHub repository (owner/repo format)"

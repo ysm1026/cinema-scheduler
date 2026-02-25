@@ -4,8 +4,8 @@ output "vm_external_ip" {
 }
 
 output "mcp_url" {
-  description = "MCP HTTP endpoint URL"
-  value       = "http://${google_compute_address.main.address}:8080/mcp"
+  description = "MCP HTTPS endpoint URL"
+  value       = var.mcp_domain != "" ? "https://${var.mcp_domain}/mcp" : "http://${google_compute_address.main.address}:8080/mcp"
 }
 
 output "data_bucket_name" {

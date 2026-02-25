@@ -124,6 +124,7 @@ resource "google_compute_instance" "main" {
 
   metadata = {
     gcs-bucket          = google_storage_bucket.data.name
+    mcp-domain          = var.mcp_domain
     scrape-days         = tostring(var.scrape_days)
     scrape-areas        = var.scrape_areas
     scrape-concurrency  = tostring(var.scrape_concurrency)
@@ -144,6 +145,19 @@ resource "google_compute_firewall" "allow_http" {
   allow {
     protocol = "tcp"
     ports    = ["8080"]
+  }
+
+  source_ranges = ["0.0.0.0/0"]
+  target_tags   = ["http-server"]
+}
+
+resource "google_compute_firewall" "allow_https" {
+  name    = "cinema-scheduler-allow-https"
+  network = "default"
+
+  allow {
+    protocol = "tcp"
+    ports    = ["80", "443"]
   }
 
   source_ranges = ["0.0.0.0/0"]

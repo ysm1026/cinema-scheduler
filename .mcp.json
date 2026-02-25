@@ -2,7 +2,7 @@
   "mcpServers": {
     "cinema-mcp": {
       "type": "http",
-      "url": "https://cinema-mcp-umb75e5sqq-an.a.run.app/mcp"
+      "url": "https://cinema-scheduler.duckdns.org/mcp"
     }
   }
 }

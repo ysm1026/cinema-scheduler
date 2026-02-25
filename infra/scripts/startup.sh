@@ -60,6 +60,7 @@ cp ${APP_DIR}/infra/scripts/cinema-mcp.service /etc/systemd/system/
 
 # Replace environment placeholders from instance metadata
 GCS_BUCKET=$(curl -sf "http://metadata.google.internal/computeMetadata/v1/instance/attributes/gcs-bucket" -H "Metadata-Flavor: Google" || echo "")
+MCP_DOMAIN=$(curl -sf "http://metadata.google.internal/computeMetadata/v1/instance/attributes/mcp-domain" -H "Metadata-Flavor: Google" || echo "")
 
 sed -i "s|\${GCS_BUCKET}|${GCS_BUCKET}|g" /etc/systemd/system/cinema-mcp.service
 
@@ -67,6 +68,24 @@ sed -i "s|\${GCS_BUCKET}|${GCS_BUCKET}|g" /etc/systemd/system/cinema-mcp.service
 systemctl daemon-reload
 systemctl enable cinema-mcp.service
 systemctl start cinema-mcp.service
+
+# --- Caddy (HTTPS reverse proxy) ---
+if [ -n "${MCP_DOMAIN}" ]; then
+  echo "Installing Caddy..."
+  apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https
+  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+  apt-get update -qq
+  apt-get install -y -qq caddy
+
+  echo "Configuring Caddy for ${MCP_DOMAIN}..."
+  cp ${APP_DIR}/infra/scripts/Caddyfile /etc/caddy/Caddyfile
+  sed -i "s|\${DOMAIN}|${MCP_DOMAIN}|g" /etc/caddy/Caddyfile
+
+  systemctl enable caddy
+  systemctl restart caddy
+  echo "Caddy installed and started for ${MCP_DOMAIN}"
+fi
 
 # Mark as initialized
 touch ${MARKER}

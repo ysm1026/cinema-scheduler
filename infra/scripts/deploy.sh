@@ -46,6 +46,25 @@ sed -i "s|\${GCS_BUCKET}|${GCS_BUCKET}|g" /etc/systemd/system/cinema-mcp.service
 systemctl daemon-reload
 systemctl restart cinema-mcp.service
 
+# Install and configure Caddy (HTTPS reverse proxy)
+MCP_DOMAIN=$(curl -sf "http://metadata.google.internal/computeMetadata/v1/instance/attributes/mcp-domain" -H "Metadata-Flavor: Google" || echo "")
+if [ -n "${MCP_DOMAIN}" ]; then
+  if ! command -v caddy &>/dev/null; then
+    echo "Installing Caddy..."
+    apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+    apt-get update -qq
+    apt-get install -y -qq caddy
+    systemctl enable caddy
+  fi
+
+  echo "Updating Caddy config for ${MCP_DOMAIN}..."
+  cp ${APP_DIR}/infra/scripts/Caddyfile /etc/caddy/Caddyfile
+  sed -i "s|\${DOMAIN}|${MCP_DOMAIN}|g" /etc/caddy/Caddyfile
+  systemctl reload caddy || systemctl restart caddy
+fi
+
 echo "=== Deploy complete ==="
 echo "MCP status:"
 systemctl status cinema-mcp.service --no-pager || true
