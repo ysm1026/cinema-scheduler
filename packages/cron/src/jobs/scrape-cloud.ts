@@ -113,7 +113,7 @@ async function main(): Promise<void> {
   logger.info('データ完全性チェック開始');
   const checkDb = await openDatabase({ readonly: true });
   try {
-    // チェック 1: 全設定エリアが DB に存在するか
+    // チェック 1: 設定エリアのカバレッジ（小規模エリアは上映データ0件の場合があるため警告のみ）
     const stmt = checkDb.prepare('SELECT DISTINCT area FROM theaters');
     const dbAreas = new Set<string>();
     while (stmt.step()) {
@@ -122,12 +122,16 @@ async function main(): Promise<void> {
     stmt.free();
 
     const missingAreas = valid.filter((a) => !dbAreas.has(a));
+    const missingRatio = missingAreas.length / valid.length;
     if (missingAreas.length > 0) {
-      logger.error(
-        { missingAreas, dbAreas: [...dbAreas] },
-        'データ完全性チェック失敗: 一部エリアのデータが欠落',
+      logger.warn(
+        { missingAreas, missingCount: missingAreas.length, totalAreas: valid.length, missingRatio: Math.round(missingRatio * 100) + '%' },
+        'データ完全性チェック: 一部エリアのデータが欠落（上映情報0件のエリア）',
       );
-      throw new Error(`データ不完全: ${missingAreas.join(', ')} のデータが欠落しています。GCS アップロードを中止します。`);
+    }
+    // 20%以上のエリアが欠落している場合のみ致命的エラー
+    if (missingRatio > 0.2) {
+      throw new Error(`データ不完全: ${missingAreas.length}/${valid.length} エリア (${Math.round(missingRatio * 100)}%) が欠落。GCS アップロードを中止します。`);
     }
 
     // チェック 2: ショータイム数が大幅に減少していないか
@@ -144,19 +148,38 @@ async function main(): Promise<void> {
     }
 
     logger.info(
-      { dbAreas: [...dbAreas], currentShowtimeCount, baselineShowtimeCount },
+      { coveredAreas: dbAreas.size, totalAreas: valid.length, currentShowtimeCount, baselineShowtimeCount },
       'データ完全性チェック OK',
     );
   } finally {
     closeDatabase(checkDb);
   }
 
-  // data.db を GCS にアップロード
+  // data.db を GCS にアップロード（リトライ付き、失敗してもスクレイピング結果は有効）
   if (gcs && bucket) {
     const dbBuffer = readFileSync(dbPath);
     logger.info({ bucket, objectName, sizeBytes: dbBuffer.length }, 'GCS アップロード開始');
-    await gcs.upload(bucket, objectName, dbBuffer);
-    logger.info('GCS アップロード完了');
+
+    const maxRetries = 3;
+    let uploaded = false;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await gcs.upload(bucket, objectName, dbBuffer);
+        logger.info('GCS アップロード完了');
+        uploaded = true;
+        break;
+      } catch (uploadError) {
+        logger.warn({ err: uploadError, attempt, maxRetries }, `GCS アップロード失敗 (${attempt}/${maxRetries})`);
+        if (attempt < maxRetries) {
+          const waitSec = attempt * 10;
+          logger.info({ waitSec }, 'リトライ待機中...');
+          await new Promise((resolve) => setTimeout(resolve, waitSec * 1000));
+        }
+      }
+    }
+    if (!uploaded) {
+      logger.error('GCS アップロード: 全リトライ失敗（スクレイピング結果はローカルDBに保存済み）');
+    }
   } else {
     logger.info({ dbPath }, 'GCS スキップ: ローカル DB のみ保存');
   }

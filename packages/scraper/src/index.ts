@@ -375,105 +375,108 @@ export async function runChainScrapers(options: ChainScrapeOptions): Promise<Cha
     logger.info({ chains }, 'チェーンスクレイパー開始');
 
     for (const chain of chains) {
-      const scraper = await createChainScraper(chain);
-      if (!scraper) {
+      // チェーンが有効かチェック
+      const testScraper = await createChainScraper(chain);
+      if (!testScraper) {
         logger.info({ chain }, 'チェーンが無効またはスクレイパー未登録、スキップ');
         continue;
       }
+      await testScraper.close();
 
-      try {
-        const dates = getScrapeDates(chain);
-        logger.info({ chain, dateCount: dates.length }, 'スクレイピング日数');
+      const dates = getScrapeDates(chain);
+      logger.info({ chain, dateCount: dates.length }, 'スクレイピング日数');
 
-        for (const date of dates) {
-          const dateStr = formatDateStr(date);
+      // 日付ごとにスクレイパーを再作成（ブラウザプロセスを再起動してリソースを解放）
+      for (const date of dates) {
+        const dateStr = formatDateStr(date);
+        const scraper = await createChainScraper(chain);
+        if (!scraper) continue;
 
-          try {
-            // 既存データがある映画館をスキップセットとして構築
-            let skipTheaterNames: Set<string> | undefined;
-            if (!dryRun && db) {
-              const existingTheaters = getScrapedTheaterNames(db, chain, dateStr);
-              if (existingTheaters.length > 0) {
-                skipTheaterNames = new Set(existingTheaters);
-                logger.info(
-                  { chain, date: dateStr, skipCount: existingTheaters.length },
-                  '既存データのある映画館をスキップ'
-                );
-              }
+        try {
+          // 既存データがある映画館をスキップセットとして構築
+          let skipTheaterNames: Set<string> | undefined;
+          if (!dryRun && db) {
+            const existingTheaters = getScrapedTheaterNames(db, chain, dateStr);
+            if (existingTheaters.length > 0) {
+              skipTheaterNames = new Set(existingTheaters);
+              logger.info(
+                { chain, date: dateStr, skipCount: existingTheaters.length },
+                '既存データのある映画館をスキップ'
+              );
             }
+          }
 
-            logger.info({ chain, date: dateStr }, 'チェーンスクレイピング開始');
+          logger.info({ chain, date: dateStr }, 'チェーンスクレイピング開始');
 
-            const result = await scraper.scrapeSchedule({
-              movieTitles: [], // 空配列 = 全映画取得
-              date,
-              skipTheaterNames,
-            });
+          const result = await scraper.scrapeSchedule({
+            movieTitles: [], // 空配列 = 全映画取得
+            date,
+            skipTheaterNames,
+          });
 
-            if (!result.ok) {
-              logger.error({ chain, date: dateStr, error: result.error }, 'チェーンスクレイプエラー');
-              results.push({
-                chain,
-                date: dateStr,
-                showtimeCount: 0,
-                theaterCount: 0,
-                movieCount: 0,
-                error: result.error.type,
-              });
-              continue;
-            }
-
-            const showtimes = result.value;
-            logger.info({ chain, date: dateStr, count: showtimes.length }, 'チェーンスクレイピング完了');
-
-            let theaterCount = 0;
-            let movieCount = 0;
-
-            if (!dryRun && db) {
-              const saveResult = saveChainShowtimesToDatabase(db, showtimes, chain, dateStr, logger);
-              theaterCount = saveResult.theaterCount;
-              movieCount = saveResult.movieCount;
-
-              addScrapeLog(db, {
-                area: `chain:${chain}`,
-                showtimeCount: showtimes.length,
-              });
-
-              saveDatabase(db);
-              logger.info({ chain, date: dateStr, theaterCount, movieCount }, 'チェーンデータをDBに保存');
-            }
-
-            results.push({
-              chain,
-              date: dateStr,
-              showtimeCount: showtimes.length,
-              theaterCount,
-              movieCount,
-            });
-          } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error({ chain, date: dateStr, error: errorMessage }, 'チェーンスクレイピングエラー');
-
-            if (!dryRun && db) {
-              addScrapeLog(db, {
-                area: `chain:${chain}`,
-                error: errorMessage,
-              });
-              saveDatabase(db);
-            }
-
+          if (!result.ok) {
+            logger.error({ chain, date: dateStr, error: result.error }, 'チェーンスクレイプエラー');
             results.push({
               chain,
               date: dateStr,
               showtimeCount: 0,
               theaterCount: 0,
               movieCount: 0,
+              error: result.error.type,
+            });
+            continue;
+          }
+
+          const showtimes = result.value;
+          logger.info({ chain, date: dateStr, count: showtimes.length }, 'チェーンスクレイピング完了');
+
+          let theaterCount = 0;
+          let movieCount = 0;
+
+          if (!dryRun && db) {
+            const saveResult = saveChainShowtimesToDatabase(db, showtimes, chain, dateStr, logger);
+            theaterCount = saveResult.theaterCount;
+            movieCount = saveResult.movieCount;
+
+            addScrapeLog(db, {
+              area: `chain:${chain}`,
+              showtimeCount: showtimes.length,
+            });
+
+            saveDatabase(db);
+            logger.info({ chain, date: dateStr, theaterCount, movieCount }, 'チェーンデータをDBに保存');
+          }
+
+          results.push({
+            chain,
+            date: dateStr,
+            showtimeCount: showtimes.length,
+            theaterCount,
+            movieCount,
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          logger.error({ chain, date: dateStr, error: errorMessage }, 'チェーンスクレイピングエラー');
+
+          if (!dryRun && db) {
+            addScrapeLog(db, {
+              area: `chain:${chain}`,
               error: errorMessage,
             });
+            saveDatabase(db);
           }
+
+          results.push({
+            chain,
+            date: dateStr,
+            showtimeCount: 0,
+            theaterCount: 0,
+            movieCount: 0,
+            error: errorMessage,
+          });
+        } finally {
+          await scraper.close();
         }
-      } finally {
-        await scraper.close();
       }
     }
 
