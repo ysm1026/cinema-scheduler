@@ -9,6 +9,7 @@ set -euo pipefail
 
 APP_DIR="/opt/cinema-scheduler"
 APP_USER="cinema-scheduler"
+DEPLOY_SCRIPT="${APP_DIR}/infra/scripts/deploy.sh"
 
 # Allow git operations on app directory owned by another user
 git config --global --add safe.directory ${APP_DIR}
@@ -26,6 +27,13 @@ chown -R ${APP_USER}:${APP_USER} ${APP_DIR}
 echo "Pulling latest code..."
 sudo -u ${APP_USER} git -C ${APP_DIR} fetch origin main
 sudo -u ${APP_USER} git -C ${APP_DIR} reset --hard origin/main
+
+# Re-exec updated deploy script after git pull (bash may still read old file descriptor)
+if [ "${DEPLOY_REEXEC:-}" != "1" ]; then
+  echo "Re-executing updated deploy script..."
+  export DEPLOY_REEXEC=1 GCS_BUCKET APP_DIR APP_USER
+  exec bash "${DEPLOY_SCRIPT}"
+fi
 
 # Install dependencies as app user (no build - dist comes from GCS)
 echo "Installing dependencies..."
@@ -47,7 +55,9 @@ systemctl daemon-reload
 systemctl restart cinema-mcp.service
 
 # Install and configure Caddy (HTTPS reverse proxy)
+echo "Fetching MCP domain from metadata..."
 MCP_DOMAIN=$(curl -sf "http://metadata.google.internal/computeMetadata/v1/instance/attributes/mcp-domain" -H "Metadata-Flavor: Google" || echo "")
+echo "MCP_DOMAIN=${MCP_DOMAIN}"
 if [ -n "${MCP_DOMAIN}" ]; then
   if ! command -v caddy &>/dev/null; then
     echo "Installing Caddy..."
