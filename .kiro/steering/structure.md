@@ -7,12 +7,12 @@
 ## Package Patterns
 
 ### MCP Server (`packages/mcp/`)
-**Purpose**: Claude Desktop向けMCPサーバー + Cloud Run HTTP サーバー（本番稼働中）
+**Purpose**: Claude Desktop向けMCPサーバー + GCE HTTPS サーバー（本番稼働中）
 **Pattern**: ツールごとにファイル分離、`tools/index.ts`で一括登録（`registerTools`パターン）、サービス層で複雑なロジックを実装。デュアルエントリーポイント（stdio / HTTP）でトランスポートのみ分離。
 ```
 src/
 ├── server.ts              # MCPサーバーエントリーポイント（stdioトランスポート）
-├── handler.ts             # Cloud Run用HTTPエントリーポイント（Express + StreamableHTTPServerTransport）
+├── handler.ts             # GCE用HTTPエントリーポイント（Express + StreamableHTTPServerTransport）
 ├── middleware/             # Express ミドルウェア
 │   ├── auth.ts            # APIキー認証ミドルウェア
 │   └── rate-limit.ts      # IPベースレート制限ミドルウェア
@@ -30,16 +30,25 @@ src/
 ```
 
 ### Scraper (`packages/scraper/`)
-**Purpose**: eiga.comからの上映情報スクレイピング
-**Pattern**: パーサーとリポジトリを分離、設定はYAMLファイル
+**Purpose**: eiga.com + チェーン公式サイトからの上映情報スクレイピング
+**Pattern**: パーサーとリポジトリを分離、設定はYAML/CSV。チェーンスクレイパーは基底クラス + レジストリパターン。
 ```
 src/
 ├── cli.ts                 # CLIエントリーポイント
 ├── config.ts              # 設定読み込み
 ├── scraper/
-│   ├── eigacom.ts         # eiga.comスクレイパー
+│   ├── eigacom.ts         # eiga.comスクレイパー（全国384エリア）
 │   ├── parser.ts          # HTML解析
-│   └── areas.ts           # エリア設定読み込み
+│   ├── areas.ts           # エリア設定読み込み
+│   ├── chains/            # チェーン公式サイトスクレイパー
+│   │   ├── base.ts        # 基底クラス（共通ロジック）
+│   │   ├── types.ts       # チェーンスクレイパー型定義
+│   │   ├── registry.ts    # チェーンレジストリ（名前→クラスマッピング）
+│   │   ├── config-loader.ts # YAML設定読み込み
+│   │   ├── cinema-sunshine.ts # Cinema Sunshine スクレイパー
+│   │   └── toho.ts        # TOHO シネマズスクレイパー
+│   └── master/            # マスターデータ管理
+│       └── loader.ts      # theaters.csv ローダー
 └── repository/            # DB操作
     ├── index.ts           # リポジトリ一括エクスポート
     ├── theater.ts
@@ -47,7 +56,9 @@ src/
     ├── showtime.ts
     └── scrape-log.ts      # スクレイピングログ記録
 config/
-└── areas.yaml             # スクレイピング対象エリア設定
+├── areas.yaml             # eiga.comスクレイピング対象エリア設定
+├── scraper.yaml           # チェーンスクレイパー設定（有効/無効、日数）
+└── theaters.csv           # 映画館マスターデータ（チェーン、コード、備考）
 ```
 
 ### Shared (`packages/shared/`)
@@ -60,22 +71,22 @@ src/
 │   ├── movie.ts
 │   └── showtime.ts
 └── db/                    # データベース
-    ├── connection.ts      # sql.js接続管理（openDatabase/saveDatabase/openDatabaseFromGcs/createGcsAutoReloadProxy）
+    ├── connection.ts      # sql.js接続管理（openDatabase/saveDatabase/openDatabaseFromGcs）
     ├── gcs-storage.ts     # GCS読み書き抽象化（download/upload/getMetadata）
     ├── schema.ts          # テーブル定義
     └── migrations/        # マイグレーション（連番ファイル: 001_initial, 002_add_audio_type...）
 ```
 
 ### Cron (`packages/cron/`)
-**Purpose**: 定期実行ジョブ（スクレイピング + エクスポート）+ Cloud Run Job エントリーポイント
-**Pattern**: node-cronでスケジュール（ローカル）、Cloud Run Job で定期実行（本番）
+**Purpose**: 定期実行ジョブ（スクレイピング + エクスポート）
+**Pattern**: ローカル node-cron でスケジュール or 直接実行
 ```
 src/
 ├── index.ts               # Cronデーモンエントリーポイント（ローカル用）
 ├── config.ts              # YAML設定読み込み
 └── jobs/
     ├── scrape.ts          # ローカルスクレイピングジョブ
-    ├── scrape-cloud.ts    # Cloud Run Job 用エントリーポイント（GCS連携 + データ完全性チェック）
+    ├── scrape-cloud.ts    # GCS連携スクレイピング（データ完全性チェック付き）
     └── export-sheets.ts   # Googleスプレッドシートエクスポート
 config/
 ├── cron.yaml              # スケジュール・エクスポート設定
@@ -96,6 +107,25 @@ src/
     ├── home.ts
     ├── tool.ts
     └── history.ts
+```
+
+### Infrastructure (`infra/`)
+**Purpose**: GCPインフラのTerraform定義 + VM運用スクリプト
+**Pattern**: フラット構成（リソース数が少ないためモジュール分割しない）。VMスクリプトは `scripts/` に配置。
+```
+infra/
+├── main.tf                # GCE instance, GCS, firewall, Cloud Functions, WIF
+├── variables.tf           # パラメータ定義
+├── outputs.tf             # 出力値
+├── terraform.tfvars       # 環境固有値（gitignore対象外）
+├── scripts/
+│   ├── startup.sh         # VM初回セットアップ（Node.js, pnpm, Caddy, systemd）
+│   ├── deploy.sh          # デプロイスクリプト（git pull + dist展開 + Caddy設定）
+│   ├── Caddyfile          # Caddy リバースプロキシ設定テンプレート
+│   ├── cinema-mcp.service # MCP サーバー systemd ユニット
+│   └── cinema-scraper.*   # スクレイパー systemd ユニット（現在未使用）
+└── functions/
+    └── budget-shutdown/   # 予算超過時 GCE 停止 Cloud Function
 ```
 
 ## Data Structures
@@ -147,24 +177,15 @@ import { openDatabase } from '@cinema-scheduler/shared';
 import { matchTitle } from '../services/title-matcher.js';
 ```
 
-### Infrastructure (`infra/`) — 本番稼働中
-**Purpose**: GCPインフラのTerraform定義
-**Pattern**: フラット構成（リソース数が少ないためモジュール分割しない）
-```
-infra/
-├── main.tf                # Cloud Run Service/Job, GCS, Cloud Scheduler, Artifact Registry, Secret Manager
-├── variables.tf           # パラメータ定義（CPU/メモリ/リトライ数等）
-├── outputs.tf             # 出力値
-└── terraform.tfvars       # 環境固有値（gitignore対象外）
-```
-
 ## Code Organization Principles
 
 - MCPツールは1ファイル1ツール（登録関数をエクスポート）
 - 複雑なロジックは`services/`に分離
 - 型定義は`shared`パッケージに集約
-- 設定ファイルはYAML形式で`config/`に配置
+- 設定ファイルはYAML/CSV形式で`config/`に配置
 - エントリーポイントはトランスポートのみ担当し、ツール登録ロジック（`registerTools`）を共有
+- チェーンスクレイパーは基底クラス + レジストリパターンで拡張可能
 
 ---
 _Document patterns, not file trees. New files following patterns shouldn't require updates_
+_updated_at: 2026-02-25 — GCE インフラ構成、チェーンスクレイパー構造、VM スクリプト構成を反映_

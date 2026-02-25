@@ -5,7 +5,7 @@
 ## Core Capabilities
 
 1. **MCPツール提供** - Claude Desktopと連携し、対話的に映画スケジュールを計画
-2. **動的スクレイピング** - Playwrightを使用してeiga.comからリアルタイムの上映情報を取得
+2. **動的スクレイピング** - Playwrightを使用してeiga.com + チェーン公式サイト（TOHO、Cinema Sunshine）からリアルタイムの上映情報を取得
 3. **最適化アルゴリズム** - 優先度・移動時間・プレミアム上映を考慮した複数候補のスケジュール生成
 4. **曖昧検索対応** - タイトルの表記ゆれ（中黒・半角全角・カナ）を吸収した検索
 
@@ -16,24 +16,35 @@
 - **エリア横断検索**: 複数の映画館エリア（新宿・池袋・渋谷等）を跨いだ最適ルートの計画
 - **時間制約対応**: 限られた時間帯内での最大限の映画体験
 
-## Deployment Modes
+## Deployment Architecture
 
-| Mode | Transport | DB Source | Target Users |
-|------|-----------|-----------|-------------|
-| ローカル | stdio | `~/.cinema-scheduler/data.db` | 開発者（Claude Desktop） |
-| Cloud Run（本番稼働中） | HTTP (Express + StreamableHTTPServerTransport) | GCS → sql.js インメモリ（自動リロード） | パブリック MCP クライアント |
+| Component | Environment | Details |
+|-----------|-------------|---------|
+| MCP Server | GCE e2-micro (free tier) | HTTPS (Caddy + Let's Encrypt) + Express |
+| Scraper | ローカル Windows | Task Scheduler で定期実行、GCS にアップロード |
+| DB | GCS → sql.js | VM 起動時にダウンロード、インメモリ展開 |
 
-- **MCP Service**: Cloud Run Service（HTTP エンドポイント、GCS からの DB 自動リロード付き）
-- **Scraper Job**: Cloud Run Job（Cloud Scheduler で定期実行、GCS アップロード前のデータ完全性チェック付き）
+- **MCP Service**: GCE VM 上の systemd サービス（`cinema-mcp.service`）、Caddy リバースプロキシ経由で HTTPS 公開
+- **Scraper**: ローカル Windows で実行（eiga.com 全国 + チェーンスクレイパー）、結果を GCS にアップロード
+- **HTTPS**: Caddy + DuckDNS (`cinema-scheduler.duckdns.org`) で自動証明書管理
 - **インフラ**: Terraform で GCP リソースを管理（`infra/`）
+- **CI/CD**: GitHub Actions + Workload Identity Federation で SSH デプロイ
 
 ## Value Proposition
 
 - **MCP統合**: Claude Desktopのネイティブツールとして動作
-- **パブリック公開（本番稼働中）**: Cloud Run 経由で任意の MCP クライアントからアクセス可能
+- **パブリック HTTPS 公開**: GCE + Caddy 経由で任意の MCP クライアントからアクセス可能
 - **動的データ取得**: JavaScriptで生成される映画館サイトに対応
 - **複数候補提案**: 単一解ではなく複数のスケジュール候補を提示
 - **曖昧検索**: ユーザーの入力揺れを吸収（「ランニングマン」→「ランニング・マン」）
+
+## Data Sources
+
+| Source | Coverage | Method |
+|--------|----------|--------|
+| eiga.com | 全国384エリア | エリアページスクレイピング |
+| TOHO | 全国TOHOシネマズ | 公式サイト直接スクレイピング（マスターデータ駆動） |
+| Cinema Sunshine | 全国シネマサンシャイン | 公式サイト直接スクレイピング（マスターデータ駆動） |
 
 ## MCP Tools
 
@@ -73,3 +84,4 @@ MCPツールは音声タイプ（字幕/吹替）を検出します：
 
 ---
 _Focus on patterns and purpose, not exhaustive feature lists_
+_updated_at: 2026-02-25 — Cloud Run → GCE 移行、チェーンスクレイパー追加、HTTPS化を反映_
