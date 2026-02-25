@@ -18,6 +18,10 @@ echo "=== Deploying cinema-scheduler ==="
 # Get GCS bucket from instance metadata
 GCS_BUCKET=$(curl -sf "http://metadata.google.internal/computeMetadata/v1/instance/attributes/gcs-bucket" -H "Metadata-Flavor: Google")
 
+# Fix ownership before git operations (root operations may have created root-owned files)
+echo "Fixing file ownership..."
+chown -R ${APP_USER}:${APP_USER} ${APP_DIR}
+
 # Pull latest code as app user (for package.json, configs, scripts)
 echo "Pulling latest code..."
 sudo -u ${APP_USER} git -C ${APP_DIR} fetch origin main
